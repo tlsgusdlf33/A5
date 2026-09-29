@@ -7,9 +7,13 @@
    - 선택 구간: 전략 중 최고 성적을 고른다.
    - 검증 구간: 고른 전략을 한 번도 보지 않은 최근 회차로 다시 평가한다.
 3. 검증 구간에서도 무작위 기준선보다 나은 전략만 채택하고, 아니면 균등 무작위+필터를 쓴다.
-4. 채택한 전략으로 이번 주 추천 번호 5세트를 만들고 지난주 예측을 채점한다.
+4. 채택한 전략으로 후보 조합을 대량 생성한 뒤, 조합 인기도 모델(research/research.py에서
+   학습·표본 외 검증)로 '남들이 덜 고르는' 조합 5세트를 고른다. 당첨 확률은 같지만
+   1·2·3등 당첨금은 당첨자끼리 나누므로 당첨 시 기대 수령액이 커진다.
+5. 지난주 예측을 채점한다.
 
-※ 로또는 매 회차 독립 시행이다. 백테스트는 과적합 여부를 드러낼 뿐 당첨 확률을 높이지 않는다.
+※ 연구 결과(research/REPORT.md): 추첨 편향이나 번호 예측력은 검출되지 않았다.
+  확률은 못 올리지만, 당첨 시 몫(기대값)은 조합 선택으로 올릴 수 있다.
 
 사용법: python3 lotto_predict.py
 외부 패키지 없이 표준 라이브러리만 사용한다.
@@ -23,6 +27,8 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from lotto_features import features
+
 DATA_URL = "https://smok95.github.io/lotto/results/all.json"
 ROOT = Path(__file__).resolve().parent
 DATA_FILE = ROOT / "data" / "draws.json"
@@ -33,6 +39,8 @@ SETS = 5
 SELECT_DRAWS = 300    # 전략 선택 구간 회차 수
 VALIDATE_DRAWS = 200  # 검증(표본 외) 구간 회차 수
 TICKET = 1000
+POP_MODEL_FILE = ROOT / "data" / "popularity_model.json"
+CANDIDATES = 5000
 
 # 이름: (전체 빈도, 최근 빈도, 미출현 기간, 콜드) 가중치
 STRATEGIES = {
@@ -60,7 +68,8 @@ def fetch_draws():
         draws = [
             {"draw": d["draw_no"], "date": d["date"][:10],
              "numbers": sorted(d["numbers"]), "bonus": d["bonus_no"],
-             "prizes": [div.get("prize", 0) for div in d.get("divisions", [])][:5]}
+             "prizes": [div.get("prize", 0) for div in d.get("divisions", [])][:5],
+             "sales": d.get("total_sales_amount", 0)}
             for d in raw
         ]
         draws.sort(key=lambda d: d["draw"])
@@ -225,6 +234,63 @@ def backtest(draws):
     return res
 
 
+def load_pop_model():
+    try:
+        m = json.loads(POP_MODEL_FILE.read_text())
+    except (OSError, ValueError):
+        return None
+    return m if m.get("validated_p", 1) < 0.05 else None  # 표본 외 검증을 통과한 모델만 사용
+
+
+def popularity(combo, m):
+    """1·2등 당첨자 수 배율 추정치(1.0 = 평균 조합)."""
+    z = (sum(c * x for c, x in zip(m["coef"], features(combo))) - m["z_mean"]) / m["z_std"]
+    return math.exp(m["gamma"] * z)
+
+
+def obvious_pattern(combo):
+    """모델이 과소평가할 수 있는 '눈에 띄는' 패턴(대량 중복 구매 위험)."""
+    diffs = [b - a for a, b in zip(combo, combo[1:])]
+    run = best = 1
+    for d in diffs:
+        run = run + 1 if d == 1 else 1
+        best = max(best, run)
+    rows = Counter((n - 1) // 7 for n in combo)
+    cols = Counter((n - 1) % 7 for n in combo)
+    return best >= 3 or len(set(diffs)) == 1 or max(rows.values()) >= 4 or max(cols.values()) >= 4
+
+
+def pick_unpopular(stats, w, draws, seed, model):
+    """채택 전략으로 후보를 만들고 인기도가 낮은 순으로 세트 간 중복 ≤2개를 지키며 5세트 선택."""
+    rng = random.Random(seed)
+    last_numbers = draws[-1]["numbers"]
+    past = {tuple(d["numbers"]) for d in draws}
+    pool, wts = list(w), list(w.values())
+    cands = set()
+    while len(cands) < CANDIDATES:
+        combo = set()
+        while len(combo) < 6:
+            combo.add(rng.choices(pool, wts)[0])
+        combo = tuple(sorted(combo))
+        if combo not in past and valid(combo, stats, last_numbers) and not obvious_pattern(combo):
+            cands.add(combo)
+    scored = sorted(cands, key=lambda c: (popularity(c, model), c))
+    sets = []
+    for c in scored:
+        if all(len(set(c) & set(s)) <= 2 for s in sets):
+            sets.append(c)
+            if len(sets) == SETS:
+                break
+    median = sorted(popularity(c, model) for c in cands)[len(cands) // 2]
+    return sets, median
+
+
+def jackpot_share(mult, tickets):
+    """1등 당첨 시 내 몫의 기대값 E[1/(1+K)], K~Poisson(다른 구매자 수)."""
+    lam = tickets / math.comb(45, 6) * mult
+    return (1 - math.exp(-lam)) / lam
+
+
 def fmt(nums):
     return " ".join(f"{n:02d}" for n in nums)
 
@@ -253,6 +319,18 @@ def backtest_table(res, phase):
     return rows
 
 
+def pop_lines(sets, model, median, tickets):
+    base = jackpot_share(median, tickets)
+    rows = ["| 세트 | 번호 | 인기도(평균=1) | 1등 시 기대 몫 | 중앙값 조합 대비 |", "|---|---|---|---|---|"]
+    for i, s in enumerate(sets):
+        p = popularity(s, model)
+        sh = jackpot_share(p, tickets)
+        rows.append(f"| {chr(65 + i)} | **{fmt(s)}** | ×{p:.2f} | {sh:.1%} | ×{sh / base:.2f} |")
+    rows += ["", f"인기도 모델: {model['model']} 당첨자 수 기반, 표본 외 검증 p={model['validated_p']:.4f} "
+                 f"(research/REPORT.md). 후보 {CANDIDATES}개 중 인기도 최하위 조합 선택, 중앙값 조합 인기도 ×{median:.2f}."]
+    return rows
+
+
 def main():
     draws = fetch_draws()
     latest = draws[-1]
@@ -263,13 +341,20 @@ def main():
     adopted = bt["adopted"]
     stats = analyze(draws)
     w = weights(stats, STRATEGIES[adopted])
-    sets = generate(stats, w, draws, seed=target)
+    model = load_pop_model()
+    if model:
+        sets, pop_median = pick_unpopular(stats, w, draws, target, model)
+    else:
+        sets, pop_median = generate(stats, w, draws, seed=target), None
+    recent_tickets = [d["sales"] / TICKET for d in draws[-52:] if d.get("sales")]
+    tickets = sum(recent_tickets) / len(recent_tickets) if recent_tickets else 1.2e8
 
     PRED_DIR.mkdir(exist_ok=True)
     (PRED_DIR / f"{target}.json").write_text(json.dumps(
         {"draw": target, "date": target_date.isoformat(),
          "generated_at": datetime.now().isoformat(timespec="seconds"),
          "based_on": latest["draw"], "strategy": adopted,
+         "popularity": [popularity(c, model) for c in sets] if model else None,
          "backtest": {ph: {k: {m: v[m] for m in ("mean", "z", "win_rate", "roi")}
                            for k, v in bt[ph].items()} for ph in ("select", "validate")},
          "sets": [list(s) for s in sets]},
@@ -305,10 +390,10 @@ def main():
     md += [
         f"## 🎯 이번 주 추천 번호 (전략: {adopted})",
         "",
-        "| 세트 | 번호 | 합계 | 홀:짝 |",
-        "|---|---|---|---|",
-        *[f"| {chr(65 + i)} | **{fmt(s)}** | {sum(s)} | {sum(n % 2 for n in s)}:{6 - sum(n % 2 for n in s)} |"
-          for i, s in enumerate(sets)],
+        *(pop_lines(sets, model, pop_median, tickets) if model else [
+            "| 세트 | 번호 | 합계 | 홀:짝 |", "|---|---|---|---|",
+            *[f"| {chr(65 + i)} | **{fmt(s)}** | {sum(s)} | {sum(n % 2 for n in s)}:{6 - sum(n % 2 for n in s)} |"
+              for i, s in enumerate(sets)]]),
         "",
         "## 백테스트 (워크포워드, 회차마다 이전 데이터만 사용)",
         "",
@@ -336,9 +421,11 @@ def main():
         "후보 전략(전체 빈도·최근 빈도·미출현·콜드·혼합·균등)별 번호 가중치로 가중 무작위 추출 후,",
         "합계 70% 구간, 홀짝 2~4개, 저(1-22)/고 2~4개, 같은 번호대 최대 3개, 직전 회차와 최대 2개 중복,",
         "역대 1등 조합 제외, 세트 간 중복 최대 2개 필터 적용. 선택 구간 1위 전략이 검증 구간에서도",
-        "기준선을 넘고 z≥1.96일 때만 채택. 시드=회차 번호(재현 가능).",
+        "기준선을 넘고 z≥1.96일 때만 채택. 그 전략으로 후보를 만든 뒤 눈에 띄는 패턴(3연속, 등차수열,",
+        "용지 한 줄 4개 이상)을 빼고 인기도 모델 점수가 가장 낮은 조합을 고름. 시드=회차 번호(재현 가능).",
         "",
-        "> ⚠️ 로또는 매 회차 독립 시행이며 모든 조합의 1등 확률은 1/8,145,060으로 같습니다. 재미로만 참고하세요.",
+        "> ⚠️ 모든 조합의 1등 확률은 1/8,145,060으로 같습니다(편향 검정 결과 research/REPORT.md). "
+        "이 방법이 올리는 것은 당첨 확률이 아니라 당첨 시 나눠 갖는 사람 수가 적을 기대값입니다.",
     ]
     out = PRED_DIR / f"{target}.md"
     out.write_text("\n".join(md) + "\n")
