@@ -20,8 +20,8 @@ android {
         applicationId = "com.tlsgusdlf33.lottolab"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         // AdMob: 현재는 Google 공식 테스트 ID. 출시 전 본인 AdMob ID 로 교체.
         manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
@@ -51,6 +51,14 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
+    }
+
+    // sideload: 폰에 직접 설치하는 테스트용 (앱 안에서 업데이트).
+    // play: Google Play 출시용 — Play 정책상 자체 업데이트 기능과 설치 권한을 넣지 않는다.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("sideload") { dimension = "distribution" }
+        create("play") { dimension = "distribution" }
     }
 
     compileOptions {

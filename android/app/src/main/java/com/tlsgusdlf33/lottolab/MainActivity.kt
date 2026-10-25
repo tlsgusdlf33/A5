@@ -28,7 +28,10 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,6 +47,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -62,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -89,6 +95,7 @@ private enum class Tab(val label: String) { PICKS("이번 주 추천"), RESULTS(
 private fun App(activity: Activity, adsReady: Boolean, vm: LottoViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(Tab.PICKS) }
+    UpdatePrompt(activity)
     Scaffold(
         topBar = {
             TopAppBar(
@@ -152,6 +159,52 @@ private fun App(activity: Activity, adsReady: Boolean, vm: LottoViewModel = view
             }
         }
     }
+}
+
+// ------------------------------------------------------------------ 앱 내 업데이트 (sideload 빌드)
+@Composable
+private fun UpdatePrompt(activity: Activity) {
+    if (!AppUpdater.ENABLED) return
+    var info by remember { mutableStateOf<UpdateInfo?>(null) }
+    var dismissed by rememberSaveable { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<Float?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { info = AppUpdater.check() }
+    val u = info ?: return
+    if (dismissed) return
+    AlertDialog(
+        onDismissRequest = { if (progress == null) dismissed = true },
+        title = { Text("새 버전 ${u.versionName}") },
+        text = {
+            Column {
+                if (u.notes.isNotBlank()) Text(u.notes)
+                Spacer(Modifier.height(8.dp))
+                Text("현재 ${BuildConfig.VERSION_NAME} · 다시 설치하지 않고 데이터 그대로 업데이트됩니다.", fontSize = 12.sp)
+                progress?.let {
+                    Spacer(Modifier.height(10.dp))
+                    LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth())
+                }
+                message?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, fontSize = 12.sp, color = Color(0xFFB91C1C))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = progress == null, onClick = {
+                message = null
+                progress = 0f
+                scope.launch {
+                    message = AppUpdater.install(activity, u) { p -> progress = p }
+                    progress = null
+                }
+            }) { Text(if (progress == null) "업데이트" else "받는 중…") }
+        },
+        dismissButton = {
+            TextButton(enabled = progress == null, onClick = { dismissed = true }) { Text("나중에") }
+        },
+    )
 }
 
 // ------------------------------------------------------------------ 공통 UI

@@ -25,7 +25,7 @@ object Ads {
     private val started = AtomicBoolean(false)
     private var interstitial: InterstitialAd? = null
     private var actions = 0
-    private const val INTERSTITIAL_EVERY = 3
+    private const val INTERSTITIAL_EVERY = 1
 
     fun start(activity: Activity, onReady: () -> Unit) {
         val consent = UserMessagingPlatform.getConsentInformation(activity)
@@ -61,7 +61,7 @@ object Ads {
         )
     }
 
-    /** '새로 뽑기' 같은 사용자 행동 3회마다 전면 광고 1회. */
+    /** '새로 뽑기'·'확인하기'를 누를 때마다 전면 광고 (광고가 아직 로드되지 않았으면 건너뜀). */
     fun onUserAction(activity: Activity) {
         if (!started.get()) return
         actions++

@@ -1,0 +1,7 @@
+{
+  "versionCode": 2,
+  "versionName": "1.1.0",
+  "apkUrl": "android/releases/LottoLab-1.1.0.apk",
+  "sha256": "19e4b30aab9092c3f26942926fb2a31444dd956cd2fbf37b4d158333420bcb23",
+  "notes": "전면 광고를 버튼 누를 때마다 표시, 앱 안에서 업데이트 기능 추가"
+}

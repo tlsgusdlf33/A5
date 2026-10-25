@@ -43,7 +43,7 @@ python3 lotto_predict.py
 - **당첨 결과**: 최근 30회. **분석**: 카이제곱 무작위성 검정, 번호별 출현 횟수, 참고 통계.
 - **내 번호**: 6개를 골라 역대 등수 이력, 인기도, 1등 시 기대 수령액 배율 확인.
 - 데이터: smok95 미러(동행복권 데이터) → 앱 캐시 → APK 내장 데이터 순. 인기도 모델은 이 저장소에서 매주 갱신본을 받음.
-- 광고: AdMob 하단 배너 + '새로 뽑기'/'확인하기' 3회마다 전면 광고, UMP 동의. **현재 Google 테스트 광고 ID** —
+- 광고: AdMob 하단 배너 + '새로 뽑기'/'확인하기'를 누를 때마다 전면 광고, UMP 동의. **현재 Google 테스트 광고 ID** —
   출시 전 `android/app/build.gradle.kts` 의 `admobAppId`, `BANNER_AD_UNIT`, `INTERSTITIAL_AD_UNIT` 을 본인 ID 로 교체.
 
 빌드 (Android SDK 필요, `android/local.properties` 에 `sdk.dir`):
@@ -53,5 +53,12 @@ cd android
 ./gradlew testDebugUnitTest   # 엔진이 Python 과 같은 값을 내는지 검증
 ./gradlew assembleRelease     # keystore.properties 가 있으면 그 키로, 없으면 debug 키로 서명
 ```
+
+빌드 종류(flavor):
+- `sideload` — 폰에 직접 설치하는 테스트용. 실행 시 `android/releases/latest.json` 을 확인해 새 버전이 있으면
+  APK 를 받아 SHA-256 검증 후 기존 앱 위에 업데이트(재설치 불필요). 최초 1회 '이 출처 허용'만 켜면 된다.
+- `play` — Google Play 출시용. Play 정책상 자체 업데이트 기능과 `REQUEST_INSTALL_PACKAGES` 권한이 빠져 있다.
+
+새 버전 배포: `app/build.gradle.kts` 의 versionCode·versionName 을 올리고 `./publish_update.sh "변경 내용"` 후 커밋·푸시.
 
 `keystore.properties`(storeFile, storePassword, keyAlias, keyPassword)와 `.jks` 는 저장소에 올리지 않는다.
