@@ -49,10 +49,31 @@ class LottoEngineTest {
             assertFalse(p.numbers in past)
             assertFalse(LottoEngine.obviousPattern(p.numbers))
             assertTrue(p.popularity < 1.0 && p.shareVsMedian > 1.0)
-            for (q in picks.drop(i + 1)) assertTrue(p.numbers.count { it in q.numbers } <= 2)
+            for (q in picks.drop(i + 1)) assertTrue(p.numbers.count { it in q.numbers } <= 1)
         }
         // 같은 시드 → 같은 결과 (주간 기본 추천 재현성)
         assertEquals(picks, LottoEngine.pickUnpopular(d, model(), 1248))
+    }
+
+    /** Python lotto_predict.p_any_match 와 같은 정확한 값. */
+    @Test
+    fun coverageExactMatchesPython() {
+        assertEquals(0.023834078570323606, LottoEngine.pAnyMatch(listOf(listOf(1, 2, 3, 4, 5, 6)), 3), 1e-12)
+        val week = listOf(
+            listOf(14, 16, 29, 30, 37, 42), listOf(15, 18, 21, 29, 36, 44), listOf(13, 21, 28, 30, 35, 41),
+            listOf(16, 20, 23, 28, 32, 45), listOf(14, 15, 27, 32, 40, 43),
+        )
+        assertEquals(0.11546949930387253, LottoEngine.pAnyMatch(week, 3), 1e-12)
+        assertEquals(0.11362354670380292, LottoEngine.randomAny5th(5), 1e-12)
+        // 겹침 없는 5세트는 무작위 5세트보다 '하나라도 당첨' 확률이 높다
+        val disjoint = (0 until 5).map { k -> (1..6).map { it + 6 * k } }
+        assertEquals(0.11867929763562209, LottoEngine.pAnyMatch(disjoint, 3), 1e-12)
+    }
+
+    @Test
+    fun picksImproveCoverage() {
+        val sets = LottoEngine.pickUnpopular(draws(), model(), 1248).map { it.numbers }
+        assertTrue(LottoEngine.pAnyMatch(sets, 3) > LottoEngine.randomAny5th(5))
     }
 
     @Test

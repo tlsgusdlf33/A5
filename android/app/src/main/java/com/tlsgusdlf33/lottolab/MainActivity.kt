@@ -267,60 +267,164 @@ private fun sourceLabel(s: Source?) = when (s) {
 }
 
 // ------------------------------------------------------------------ 이번 주 추천
+private fun pct(x: Double) = "%.2f%%".format(x * 100)
+
+@Composable
+private fun PickRows(sets: List<List<Int>>, pops: List<Double>?, shares: List<Double>?) {
+    sets.forEachIndexed { i, set ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 5.dp)) {
+            Text("${'A' + i}", fontWeight = FontWeight.Bold, modifier = Modifier.width(20.dp))
+            BallRow(set, size = 34)
+        }
+        val p = pops?.getOrNull(i)
+        val sh = shares?.getOrNull(i)
+        if (p != null && sh != null) {
+            Text(
+                "   인기도 ×${"%.2f".format(p)} · 1등 시 기대 수령액 보통 조합의 ×${"%.2f".format(sh)}",
+                fontSize = 12.sp, color = Color(0xFF374151),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CoverageLine(sets: List<List<Int>>, maxOverlap: Int?) {
+    val mine = remember(sets) { LottoEngine.pAnyMatch(sets, 3) }
+    val rand = LottoEngine.randomAny5th(sets.size)
+    val ov = maxOverlap ?: sets.flatMap { a -> sets.filter { it !== a }.map { b -> a.count { it in b } } }.maxOrNull() ?: 0
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "🎯 ${sets.size}세트 중 하나라도 5등 이상: ${pct(mine)}",
+        fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+    )
+    Note(
+        "아무렇게나 고른 ${sets.size}세트 평균 ${pct(rand)} 대비 ${"%+.1f".format((mine / rand - 1) * 100)}% · " +
+            "세트끼리 겹치는 번호 최대 ${ov}개 (조합 수로 정확히 계산)"
+    )
+}
+
 @Composable
 private fun PicksScreen(s: UiState, onRegenerate: () -> Unit, onRefresh: () -> Unit) {
+    val w = s.weekly
     LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Section("제${s.targetDraw}회 추천 번호") {
-                Note("${s.targetDate} 추첨 · ${sourceLabel(s.source)} (제1~${s.draws.last().no}회 분석)")
-                Spacer(Modifier.height(12.dp))
-                s.picks.forEachIndexed { i, p ->
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 5.dp)) {
-                        Text("${'A' + i}", fontWeight = FontWeight.Bold, modifier = Modifier.width(20.dp))
-                        BallRow(p.numbers, size = 34)
-                    }
-                    Text(
-                        "   인기도 ×${"%.2f".format(p.popularity)} · 1등 시 기대 수령액 보통 조합의 ×${"%.2f".format(p.shareVsMedian)}",
-                        fontSize = 12.sp, color = Color(0xFF374151),
-                    )
+                if (w != null) {
+                    Note("${s.targetDate} 추첨 · 주간 분석 루틴 결과 (제1~${s.draws.last().no}회 분석, 알림과 같은 번호)")
+                    Spacer(Modifier.height(10.dp))
+                    PickRows(w.sets, w.popularity, w.shareVsMedian)
+                    CoverageLine(w.sets, w.maxOverlap)
+                } else {
+                    Note("${s.targetDate} 추첨 · 주간 루틴 결과가 아직 없어 앱에서 같은 방법으로 생성 · ${sourceLabel(s.source)}")
+                    Spacer(Modifier.height(10.dp))
+                    PickRows(s.picks.map { it.numbers }, s.picks.map { it.popularity }, s.picks.map { it.shareVsMedian })
+                    if (s.picks.isNotEmpty()) CoverageLine(s.picks.map { it.numbers }, null)
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onRegenerate, enabled = !s.generating) {
-                        Text(if (s.generating) "뽑는 중…" else "새로 뽑기")
+                        Text(if (s.generating) "뽑는 중…" else "추가 조합 뽑기")
                     }
                     OutlinedButton(onClick = onRefresh) { Text("새로고침") }
                 }
             }
         }
-        s.weekly?.let { w ->
-            item {
-                Section("주간 분석 루틴 추천 (제${w.draw}회)") {
-                    Note("매주 월요일 서버에서 최신 데이터로 재학습해 만든 5세트")
+        if (s.extraPicks.isNotEmpty()) {
+            item(key = "extra-${s.regenCount}") {
+                Section("추가 조합 (앱에서 생성)") {
+                    Note("같은 방법(저인기 + 겹침 최소화)으로 새 난수를 써서 만든 5세트")
                     Spacer(Modifier.height(8.dp))
-                    w.sets.forEachIndexed { i, set ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-                            Text("${'A' + i}", fontWeight = FontWeight.Bold, modifier = Modifier.width(20.dp))
-                            BallRow(set, size = 30)
-                        }
-                    }
+                    PickRows(s.extraPicks.map { it.numbers }, s.extraPicks.map { it.popularity },
+                        s.extraPicks.map { it.shareVsMedian })
+                    CoverageLine(s.extraPicks.map { it.numbers }, null)
                 }
             }
         }
+        w?.verification?.let { v -> item { VerificationCard(v, s) } }
+        w?.review?.let { r -> item { ReviewCard(r) } }
         item {
             Section("이 번호는 어떻게 골랐나요?") {
                 Note(
-                    "1. 역대 당첨번호 1,200여 회를 검정한 결과, 추첨은 통계적으로 무작위와 구분되지 않았습니다. " +
-                        "핫·콜드·미출현 등 번호 예측 전략 19가지 모두 무작위보다 낫지 않았습니다.\n\n" +
-                        "2. 그래서 당첨 확률을 높이는 대신 '당첨됐을 때 받는 돈'을 높입니다. 1~3등은 당첨금을 당첨자끼리 " +
-                        "나누므로, 남들이 덜 고르는 조합일수록 같은 등수라도 더 많이 받습니다.\n\n" +
-                        "3. 회차별 판매량과 3등 당첨자 수로 번호·패턴별 인기도를 학습하고, 학습에 쓰지 않은 회차에서 " +
-                        "1·2등 당첨자 수를 예측해 검증했습니다(p=${"%.3f".format(s.model?.validatedP ?: 1.0)}). " +
-                        "무작위 후보 5,000개 중 인기도가 가장 낮은 조합을 고릅니다."
+                    "1. 당첨 확률: 역대 당첨번호를 검정한 결과 추첨은 무작위와 구분되지 않았고, 핫·콜드·미출현 등 " +
+                        "번호 예측 전략도 무작위보다 낫지 않았습니다. 세트 1개의 확률은 어떤 번호든 같습니다.\n\n" +
+                        "2. 당첨 범위(승률): 그래서 5세트끼리 번호가 최대한 겹치지 않게 골라, 같은 5,000원으로 " +
+                        "'하나라도 당첨'될 확률을 높입니다. 아무렇게나 고른 5세트보다 약 2% 높습니다.\n\n" +
+                        "3. 당첨금: 1~3등은 당첨금을 나눠 갖기 때문에 남들이 덜 고르는 조합을 씁니다. 판매량과 3등 " +
+                        "당첨자 수로 학습한 인기도 모델이 학습에 안 쓴 회차의 1·2등 당첨자 수까지 맞혔습니다" +
+                        "(p=${"%.3f".format(s.model?.validatedP ?: 1.0)}).\n\n" +
+                        "4. 매주 월요일 최신 회차까지 다시 검정·학습해 위 결과를 새로 만듭니다."
                 )
             }
         }
         item { Disclaimer() }
+    }
+}
+
+@Composable
+private fun VerificationCard(v: Verification, s: UiState) {
+    Section("이번 주 검증 결과") {
+        Text("① 추첨 편향 검정", fontWeight = FontWeight.SemiBold)
+        Note(
+            "제1~${s.draws.last().no}회 번호 빈도 p=${"%.2f".format(v.chiP)}" +
+                (if (v.machineChiP.isNotEmpty()) " · 추첨기별 p=" + v.machineChiP.entries.sortedBy { it.key }
+                    .joinToString(", ") { "${it.key}호기 ${"%.2f".format(it.value)}" } else "") +
+                "\n→ ${if (v.chiP > 0.05) "무작위와 구분되지 않음 (특정 번호가 잘 나오지 않음)" else "편향 신호 있음 — 추가 확인 필요"}"
+        )
+        Spacer(Modifier.height(8.dp))
+        Text("② 번호 예측 전략 백테스트", fontWeight = FontWeight.SemiBold)
+        Note(
+            (v.strategiesTested?.let { "${it}개 전략 워크포워드 검정, 최대 |z|=${"%.2f".format(v.maxAbsZ ?: 0.0)} · " } ?: "") +
+                (if (v.significant.isEmpty()) "유의한 전략 없음" else "유의: ${v.significant.joinToString()}") +
+                "\n선택 구간 1위 '${v.backtestBest}' → 검증 구간 z=${"%+.2f".format(v.backtestBestZ)}" +
+                "\n→ 채택: ${v.adopted}"
+        )
+        Spacer(Modifier.height(8.dp))
+        Text("③ 인기도 모델 (당첨금 분할)", fontWeight = FontWeight.SemiBold)
+        Note(
+            "학습에 안 쓴 회차로 검증 p=${"%.3f".format(v.popularityP ?: 1.0)} " +
+                "(${if ((v.popularityP ?: 1.0) < 0.05) "통과" else "미통과 — 사용 안 함"})" +
+                (v.popularityGain?.let { "\n인기도 하위 1% 조합의 1등 기대 수령액: 보통 조합의 ×${"%.2f".format(it)}" } ?: "")
+        )
+        s.weekly?.coverage?.let { c ->
+            Spacer(Modifier.height(8.dp))
+            Text("④ 당첨 범위 (승률)", fontWeight = FontWeight.SemiBold)
+            Note(
+                "5세트 중 하나라도 5등 이상 ${pct(c.pAny5th)} (무작위 5세트 ${pct(c.randomAny5th)})" +
+                    "\n하나라도 4등 이상 ${pct(c.pAny4th)} (무작위 ${pct(c.randomAny4th)})"
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReviewCard(r: Review) {
+    Section("지난주 결과 검토 (제${r.draw}회)") {
+        Note("${r.date} 당첨번호")
+        Spacer(Modifier.height(6.dp))
+        BallRow(r.numbers, r.bonus, size = 30)
+        Spacer(Modifier.height(10.dp))
+        r.sets.forEachIndexed { i, x ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                Text("${'A' + i}", fontWeight = FontWeight.Bold, modifier = Modifier.width(20.dp))
+                BallRow(x.numbers, size = 26, highlight = x.hits.toSet())
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (x.rank == 0) "${x.hits.size}개" else "${x.rank}등",
+                    fontSize = 12.sp,
+                    fontWeight = if (x.rank > 0) FontWeight.Bold else FontWeight.Normal,
+                    color = if (x.rank > 0) Color(0xFFB45309) else Color(0xFF6B7280),
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "최고 ${r.bestHits}개 일치 · 당첨금 ${won(r.won)} / 구매 ${won(r.spent)}",
+            fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+        )
+        Note(
+            "5세트 기준 5등 이상 당첨 확률은 매주 약 11.6%라서, 대부분의 주는 낙첨입니다. " +
+                "한 주의 결과로 방법의 좋고 나쁨을 판단할 수 없습니다."
+        )
     }
 }
 

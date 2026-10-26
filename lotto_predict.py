@@ -41,6 +41,9 @@ VALIDATE_DRAWS = 200  # 검증(표본 외) 구간 회차 수
 TICKET = 1000
 POP_MODEL_FILE = ROOT / "data" / "popularity_model.json"
 CANDIDATES = 5000
+POP_CAP = 0.92       # 커버리지 탐색에 쓸 후보의 인기도 상한
+SEARCH_STARTS = 60
+SUMMARY_FILE = ROOT / "data" / "research_summary.json"
 
 # 이름: (전체 빈도, 최근 빈도, 미출현 기간, 콜드) 가중치
 STRATEGIES = {
@@ -98,11 +101,24 @@ def analyze(draws):
         any(b - a == 1 for a, b in zip(d["numbers"], d["numbers"][1:]))
         for d in draws
     )
+    exp_n = len(draws) * 6 / 45
+    chi = sum((total[n] - exp_n) ** 2 / exp_n for n in NUMBERS)
     return {
+        "chi": chi, "chi_p": chi2_sf(chi, 44),
         "n": len(draws), "total": total, "recent": recent, "gap": gap,
         "sum_lo": sums[int(len(sums) * 0.15)], "sum_hi": sums[int(len(sums) * 0.85)],
         "odd_dist": odd_dist, "consec_ratio": consec / len(draws),
     }
+
+
+def chi2_sf(x, k):
+    """카이제곱 생존함수 (짝수 자유도 k: 닫힌 형태)."""
+    m = x / 2
+    term = total = math.exp(-m)
+    for i in range(1, k // 2):
+        term *= m / i
+        total += term
+    return total
 
 
 def weights(stats, mix):
@@ -275,14 +291,75 @@ def pick_unpopular(stats, w, draws, seed, model):
         if combo not in past and valid(combo, stats, last_numbers) and not obvious_pattern(combo):
             cands.add(combo)
     scored = sorted(cands, key=lambda c: (popularity(c, model), c))
-    sets = []
-    for c in scored:
-        if all(len(set(c) & set(s)) <= 2 for s in sets):
-            sets.append(c)
-            if len(sets) == SETS:
-                break
     median = sorted(popularity(c, model) for c in cands)[len(cands) // 2]
-    return sets, median
+    # 세트끼리 번호가 덜 겹칠수록 '5세트 중 하나라도 당첨'될 확률이 커진다(커버리지).
+    # 인기도 ×POP_CAP 이하 후보 안에서 시작 조합을 바꿔 가며 겹침 ≤1 / 0 조합을 만들어 보고,
+    # 커버리지가 가장 높은(같으면 평균 인기도가 낮은) 5세트를 고른다.
+    pop = {c: popularity(c, model) for c in scored}
+    pool = [c for c in scored if pop[c] <= POP_CAP]
+    if len(pool) < 50:
+        pool = scored[:200]
+
+    def greedy(order, max_overlap):
+        out = []
+        for c in order:
+            if all(len(set(c) & set(x)) <= max_overlap for x in out):
+                out.append(c)
+                if len(out) == SETS:
+                    return out
+        return None
+
+    best = None
+    for start in pool[:SEARCH_STARTS]:
+        for max_overlap in (1, 0):
+            g = greedy([start] + pool, max_overlap)
+            if g is None:
+                continue
+            key = (p_any_match(g, 3), -sum(pop[c] for c in g) / SETS)
+            if best is None or key > best[0]:
+                best = (key, g, max_overlap)
+    if best is None:  # 후보가 부족하면 전체에서 겹침 ≤2 로 완화
+        for max_overlap in (1, 2):
+            g = greedy(scored, max_overlap)
+            if g:
+                return sorted(g, key=pop.get), median, max_overlap
+    g = best[1]
+    return sorted(g, key=pop.get), median, max(len(set(a) & set(b)) for a in g for b in g if a != b)
+
+
+def p_any_match(sets, need):
+    """P(세트 중 하나라도 need개 이상 일치)를 정확히 계산.
+    번호를 '어느 세트들에 속하는가'(벤 다이어그램 칸)로 묶고, 6개 번호가 각 칸에서 몇 개씩
+    나오는지의 모든 경우를 조합 수로 센다. 시뮬레이션 오차 없음."""
+    cells = Counter(tuple(i for i, st in enumerate(sets) if n in st) for n in NUMBERS)
+    keys = list(cells.items())
+    hit = 0
+
+    def rec(i, left, matches, ways):
+        nonlocal hit
+        if i == len(keys):
+            if left == 0 and max(matches) >= need:
+                hit += ways
+            return
+        sig, size = keys[i]
+        for k in range(min(size, left) + 1):
+            m = list(matches)
+            for j in sig:
+                m[j] += k
+            rec(i + 1, left - k, m, ways * math.comb(size, k))
+
+    rec(0, 6, [0] * len(sets), 1)
+    return hit / math.comb(45, 6)
+
+
+def coverage(sets):
+    """'세트 중 하나라도 5등·4등 이상' 정확한 확률과, 아무렇게나 고른 같은 수의 세트 평균(=독립 근사, 정확)."""
+    p5 = sum(P_MATCH[k] for k in (3, 4, 5, 6))
+    p4 = sum(P_MATCH[k] for k in (4, 5, 6))
+    n = len(sets)
+    return {"p_any_5th": p_any_match(sets, 3), "p_any_4th": p_any_match(sets, 4),
+            "random_p_any_5th": 1 - (1 - p5) ** n, "random_p_any_4th": 1 - (1 - p4) ** n,
+            "p_single_5th": p5, "exact": True}
 
 
 def jackpot_share(mult, tickets):
@@ -293,6 +370,22 @@ def jackpot_share(mult, tickets):
 
 def fmt(nums):
     return " ".join(f"{n:02d}" for n in nums)
+
+
+def review_data(draws):
+    """직전 회차 예측 채점 결과 (앱에서도 그대로 표시)."""
+    latest = draws[-1]
+    prev_file = PRED_DIR / f"{latest['draw']}.json"
+    if not prev_file.exists():
+        return None
+    prev = json.loads(prev_file.read_text())
+    sets = [{"numbers": s, "hits": sorted(set(s) & set(latest["numbers"])),
+             "bonus_hit": latest["bonus"] in s, "rank": grade(s, latest),
+             "prize": prize(grade(s, latest), latest)} for s in prev["sets"]]
+    return {"draw": latest["draw"], "date": latest["date"], "numbers": latest["numbers"],
+            "bonus": latest["bonus"], "sets": sets,
+            "best_hits": max(len(x["hits"]) for x in sets),
+            "won": sum(x["prize"] for x in sets), "spent": len(sets) * TICKET}
 
 
 def review_previous(draws):
@@ -343,9 +436,15 @@ def main():
     w = weights(stats, STRATEGIES[adopted])
     model = load_pop_model()
     if model:
-        sets, pop_median = pick_unpopular(stats, w, draws, target, model)
+        sets, pop_median, max_overlap = pick_unpopular(stats, w, draws, target, model)
     else:
-        sets, pop_median = generate(stats, w, draws, seed=target), None
+        sets, pop_median, max_overlap = generate(stats, w, draws, seed=target), None, 2
+    cov = coverage(sets)
+    try:
+        research = json.loads(SUMMARY_FILE.read_text())
+    except (OSError, ValueError):
+        research = {}
+    review = review_data(draws)
     recent_tickets = [d["sales"] / TICKET for d in draws[-52:] if d.get("sales")]
     tickets = sum(recent_tickets) / len(recent_tickets) if recent_tickets else 1.2e8
 
@@ -355,6 +454,24 @@ def main():
          "generated_at": datetime.now().isoformat(timespec="seconds"),
          "based_on": latest["draw"], "strategy": adopted,
          "popularity": [popularity(c, model) for c in sets] if model else None,
+         "share_vs_median": [jackpot_share(popularity(c, model), tickets) / jackpot_share(pop_median, tickets)
+                             for c in sets] if model else None,
+         "max_overlap": max_overlap,
+         "coverage": cov,
+         "verification": {
+             "draws_analyzed": len(draws),
+             "chi_p": research.get("chi_p", stats["chi_p"]),
+             "machine_chi_p": research.get("machine_chi_p"),
+             "strategies_tested": research.get("strategies_tested"),
+             "max_abs_z": research.get("max_abs_z"),
+             "significant": research.get("significant"),
+             "backtest_best": bt["best"],
+             "backtest_best_validate_z": bt["validate"][bt["best"]]["z"],
+             "adopted": adopted,
+             "popularity_p": model["validated_p"] if model else None,
+             "popularity_gain": research.get("popularity_gain"),
+         },
+         "review": review,
          "backtest": {ph: {k: {m: v[m] for m in ("mean", "z", "win_rate", "roi")}
                            for k, v in bt[ph].items()} for ph in ("select", "validate")},
          "sets": [list(s) for s in sets]},
@@ -394,6 +511,11 @@ def main():
             "| 세트 | 번호 | 합계 | 홀:짝 |", "|---|---|---|---|",
             *[f"| {chr(65 + i)} | **{fmt(s)}** | {sum(s)} | {sum(n % 2 for n in s)}:{6 - sum(n % 2 for n in s)} |"
               for i, s in enumerate(sets)]]),
+        "",
+        f"**당첨 범위 넓히기:** 5세트끼리 겹치는 번호 최대 {max_overlap}개 → 5세트 중 하나라도 5등 이상 "
+        f"{cov['p_any_5th']:.2%} (아무렇게나 고른 5세트 평균 {cov['random_p_any_5th']:.2%}, "
+        f"{cov['p_any_5th'] / cov['random_p_any_5th'] - 1:+.1%}). 세트당 확률({cov['p_single_5th']:.2%})은 그대로이고 "
+        "세트끼리 겹치지 않게 해 같은 금액으로 더 많은 번호를 덮는다. (조합 수로 정확히 계산)",
         "",
         "## 백테스트 (워크포워드, 회차마다 이전 데이터만 사용)",
         "",

@@ -136,9 +136,13 @@ object LottoEngine {
         return best >= 3 || diffs.toSet().size == 1 || rows >= 4 || cols >= 4
     }
 
+    private const val POP_CAP = 0.92
+    private const val SEARCH_STARTS = 60
+
     /**
-     * 균등 무작위 후보를 만들고(백테스트에서 번호 선택 전략의 우위가 없었으므로),
-     * 인기도가 낮은 순으로 세트 간 중복 2개 이하를 지키며 5세트를 고른다.
+     * 균등 무작위 후보를 만들고(백테스트에서 번호 선택 전략의 우위가 없었으므로), 인기도 ×0.92 이하 후보 안에서
+     * 세트끼리 겹치는 번호 ≤1(또는 0)인 5세트 조합을 여러 개 만들어 '하나라도 5등 이상' 확률이 가장 높은 것을 고른다.
+     * lotto_predict.py 의 pick_unpopular 와 같은 방법.
      */
     fun pickUnpopular(draws: List<Draw>, model: PopularityModel, seed: Long): List<Pick> {
         val s = stats(draws)
@@ -151,20 +155,83 @@ object LottoEngine {
             val c = (1..45).shuffled(rng).take(6).sorted()
             if (c !in past && valid(c, s, last) && !obviousPattern(c)) cands.add(c)
         }
-        val scored = cands.map { it to popularity(it, model) }.sortedWith(
-            compareBy<Pair<List<Int>, Double>> { it.second }.thenBy { it.first.joinToString() }
-        )
-        val median = scored[scored.size / 2].second
-        val tickets = avgTickets(draws)
-        val base = jackpotShare(median, tickets)
-        val out = mutableListOf<Pick>()
-        for ((c, p) in scored) {
-            if (out.all { o -> o.numbers.count { it in c } <= 2 }) {
-                out += Pick(c, p, jackpotShare(p, tickets) / base)
-                if (out.size == SETS) break
+        val pop = cands.associateWith { popularity(it, model) }
+        val scored = cands.sortedWith(compareBy<List<Int>> { pop.getValue(it) }.thenBy { it.joinToString() })
+        val median = pop.getValue(scored[scored.size / 2])
+        var pool = scored.filter { pop.getValue(it) <= POP_CAP }
+        if (pool.size < 50) pool = scored.take(200)
+
+        fun greedy(order: List<List<Int>>, maxOverlap: Int): List<List<Int>>? {
+            val out = mutableListOf<List<Int>>()
+            for (c in order) {
+                if (out.all { o -> o.count { it in c } <= maxOverlap }) {
+                    out += c
+                    if (out.size == SETS) return out
+                }
+            }
+            return null
+        }
+
+        var best: List<List<Int>>? = null
+        var bestP = -1.0
+        var bestPop = Double.MAX_VALUE
+        for (start in pool.take(SEARCH_STARTS)) {
+            for (ov in intArrayOf(1, 0)) {
+                val g = greedy(listOf(start) + pool, ov) ?: continue
+                val p = pAnyMatch(g, 3)
+                val avg = g.sumOf { pop.getValue(it) } / SETS
+                if (p > bestP + 1e-12 || (abs(p - bestP) <= 1e-12 && avg < bestPop)) {
+                    best = g; bestP = p; bestPop = avg
+                }
             }
         }
-        return out
+        val chosen = best ?: greedy(scored, 1) ?: greedy(scored, 2) ?: scored.take(SETS)
+        val tickets = avgTickets(draws)
+        val base = jackpotShare(median, tickets)
+        return chosen.sortedBy { pop.getValue(it) }.map {
+            val p = pop.getValue(it)
+            Pick(it, p, jackpotShare(p, tickets) / base)
+        }
+    }
+
+    /** 세트 1개가 5등 이상일 확률 (3개 이상 일치). */
+    val P_SINGLE_5TH = (3..6).sumOf { comb(6, it) * comb(39, 6 - it) } / TOTAL_COMBOS
+
+    /** 아무렇게나 고른 n세트 중 하나라도 5등 이상일 확률의 평균 (= 독립 근사, 정확). */
+    fun randomAny5th(n: Int) = 1 - Math.pow(1 - P_SINGLE_5TH, n.toDouble())
+
+    /**
+     * P(세트 중 하나라도 need개 이상 일치) — 번호를 '어느 세트들에 속하는가'로 묶어 조합 수로 정확히 계산.
+     */
+    fun pAnyMatch(sets: List<List<Int>>, need: Int): Double {
+        val cells = HashMap<List<Int>, Int>()
+        for (n in 1..45) {
+            val sig = sets.indices.filter { n in sets[it] }
+            cells[sig] = (cells[sig] ?: 0) + 1
+        }
+        val keys = cells.entries.map { it.key to it.value }
+        var hit = 0.0
+        fun rec(i: Int, left: Int, matches: IntArray, ways: Double) {
+            if (i == keys.size) {
+                if (left == 0 && matches.max() >= need) hit += ways
+                return
+            }
+            val (sig, size) = keys[i]
+            for (k in 0..minOf(size, left)) {
+                val m = matches.copyOf()
+                for (j in sig) m[j] += k
+                rec(i + 1, left - k, m, ways * comb(size, k))
+            }
+        }
+        rec(0, 6, IntArray(sets.size), 1.0)
+        return hit / TOTAL_COMBOS
+    }
+
+    private fun comb(n: Int, k: Int): Double {
+        if (k < 0 || k > n) return 0.0
+        var r = 1.0
+        for (i in 0 until k) r = r * (n - i) / (i + 1)
+        return r
     }
 
     fun medianShare(draws: List<Draw>, model: PopularityModel, combo: List<Int>): Double {

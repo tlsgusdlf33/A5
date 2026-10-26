@@ -9,8 +9,48 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** 주간 루틴이 저장소에 올린 공식 추천 (predictions/<회차>.json). */
-data class WeeklyPrediction(val draw: Int, val date: String, val sets: List<List<Int>>, val strategy: String)
+/** 주간 루틴이 저장소에 올린 공식 추천 (predictions/<회차>.json). 예전 파일엔 일부 필드가 없을 수 있다. */
+data class WeeklyPrediction(
+    val draw: Int,
+    val date: String,
+    val sets: List<List<Int>>,
+    val strategy: String,
+    val popularity: List<Double>?,
+    val shareVsMedian: List<Double>?,
+    val maxOverlap: Int?,
+    val coverage: Coverage?,
+    val verification: Verification?,
+    val review: Review?,
+)
+
+data class Coverage(val pAny5th: Double, val randomAny5th: Double, val pAny4th: Double, val randomAny4th: Double)
+
+data class Verification(
+    val drawsAnalyzed: Int,
+    val chiP: Double,
+    val machineChiP: Map<String, Double>,
+    val strategiesTested: Int?,
+    val maxAbsZ: Double?,
+    val significant: List<String>,
+    val backtestBest: String,
+    val backtestBestZ: Double,
+    val adopted: String,
+    val popularityP: Double?,
+    val popularityGain: Double?,
+)
+
+data class ReviewSet(val numbers: List<Int>, val hits: List<Int>, val bonusHit: Boolean, val rank: Int, val prize: Long)
+
+data class Review(
+    val draw: Int,
+    val date: String,
+    val numbers: List<Int>,
+    val bonus: Int,
+    val sets: List<ReviewSet>,
+    val bestHits: Int,
+    val won: Long,
+    val spent: Long,
+)
 
 enum class Source { NETWORK, CACHE, BUNDLED }
 
@@ -57,12 +97,58 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun weekly(draw: Int): WeeklyPrediction? = withContext(Dispatchers.IO) {
-        val text = fetch(base + "predictions/$draw.json") ?: return@withContext null
-        runCatching {
-            val o = JSONObject(text)
-            val sets = o.getJSONArray("sets").let { a -> List(a.length()) { ints(a.getJSONArray(it)) } }
-            WeeklyPrediction(o.getInt("draw"), o.optString("date"), sets, o.optString("strategy"))
-        }.getOrNull()
+        val cache = File(context.filesDir, "weekly_$draw.json")
+        val text = fetch(base + "predictions/$draw.json")?.also { cache.writeText(it) }
+            ?: cache.takeIf { it.exists() }?.readText()
+            ?: return@withContext null
+        runCatching { parseWeekly(text) }.getOrNull()
+    }
+
+    private fun doubles(a: JSONArray?) = a?.let { List(it.length()) { i -> it.getDouble(i) } }
+
+    private fun parseWeekly(text: String): WeeklyPrediction {
+        val o = JSONObject(text)
+        val sets = o.getJSONArray("sets").let { a -> List(a.length()) { ints(a.getJSONArray(it)) } }
+        val cov = o.optJSONObject("coverage")?.let {
+            Coverage(it.getDouble("p_any_5th"), it.getDouble("random_p_any_5th"),
+                it.optDouble("p_any_4th", 0.0), it.optDouble("random_p_any_4th", 0.0))
+        }
+        val ver = o.optJSONObject("verification")?.let { v ->
+            val mc = v.optJSONObject("machine_chi_p")
+            Verification(
+                drawsAnalyzed = v.optInt("draws_analyzed"),
+                chiP = v.optDouble("chi_p", Double.NaN),
+                machineChiP = mc?.keys()?.asSequence()?.associateWith { mc.getDouble(it) } ?: emptyMap(),
+                strategiesTested = v.optInt("strategies_tested").takeIf { it > 0 },
+                maxAbsZ = v.optDouble("max_abs_z").takeIf { !it.isNaN() },
+                significant = v.optJSONArray("significant")?.let { a -> List(a.length()) { a.getString(it) } } ?: emptyList(),
+                backtestBest = v.optString("backtest_best"),
+                backtestBestZ = v.optDouble("backtest_best_validate_z", Double.NaN),
+                adopted = v.optString("adopted"),
+                popularityP = v.optDouble("popularity_p").takeIf { !it.isNaN() },
+                popularityGain = v.optDouble("popularity_gain").takeIf { !it.isNaN() },
+            )
+        }
+        val rev = o.optJSONObject("review")?.let { r ->
+            val rs = r.getJSONArray("sets")
+            Review(
+                draw = r.getInt("draw"), date = r.optString("date"), numbers = ints(r.getJSONArray("numbers")),
+                bonus = r.getInt("bonus"),
+                sets = List(rs.length()) { i ->
+                    val x = rs.getJSONObject(i)
+                    ReviewSet(ints(x.getJSONArray("numbers")), ints(x.getJSONArray("hits")),
+                        x.optBoolean("bonus_hit"), x.getInt("rank"), x.optLong("prize"))
+                },
+                bestHits = r.optInt("best_hits"), won = r.optLong("won"), spent = r.optLong("spent"),
+            )
+        }
+        return WeeklyPrediction(
+            draw = o.getInt("draw"), date = o.optString("date"), sets = sets, strategy = o.optString("strategy"),
+            popularity = doubles(o.optJSONArray("popularity")),
+            shareVsMedian = doubles(o.optJSONArray("share_vs_median")),
+            maxOverlap = o.optInt("max_overlap", -1).takeIf { it >= 0 },
+            coverage = cov, verification = ver, review = rev,
+        )
     }
 
     private fun asset(name: String) = context.assets.open(name).bufferedReader().use { it.readText() }

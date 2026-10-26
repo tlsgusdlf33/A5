@@ -32,6 +32,7 @@ P5 = math.comb(6, 3) * math.comb(39, 3) / N_COMB
 P2 = 6 / N_COMB
 P1 = 1 / N_COMB
 out = []
+SUMMARY = {}  # 앱·주간 리포트가 읽는 요약 (data/research_summary.json)
 
 
 def say(s=""):
@@ -105,14 +106,19 @@ def part_a(raw, mach):
     say("| 대상 | 회차 수 | χ² | p-value |")
     say("|---|---|---|---|")
     say(f"| 전체 1~{raw[-1]['draw_no']}회 | {len(raw)} | {chi.statistic:.1f} | {chi.pvalue:.3f} |")
+    SUMMARY["through_draw"] = raw[-1]["draw_no"]
+    SUMMARY["chi_p"] = float(chi.pvalue)
+    SUMMARY["machine_chi_p"] = {}
     for m in (1, 2, 3):
         sub = [d for d in raw if mach.get(d["draw_no"]) == m]
         c = chi_uniform(sub)
         say(f"| {m}호기 | {len(sub)} | {c.statistic:.1f} | {c.pvalue:.3f} |")
+        SUMMARY["machine_chi_p"][str(m)] = float(c.pvalue)
     # 호기 간 분포 차이 (분할표 독립성)
     table = np.array([[Counter(n for d in raw if mach.get(d["draw_no"]) == m for n in d["numbers"])[n]
                        for n in range(1, 46)] for m in (1, 2, 3)])
     ch2, p, dof, _ = st.chi2_contingency(table)
+    SUMMARY["machine_diff_p"] = float(p)
     say(f"| 호기 간 번호분포 차이(독립성) | {sum(1 for d in raw if d['draw_no'] in mach)} | {ch2:.1f} (df={dof}) | {p:.3f} |")
     say()
     say("p-value가 0.05보다 크면 '무작위 추첨'과 구분되지 않는다는 뜻이다.")
@@ -132,6 +138,9 @@ def part_a(raw, mach):
     say(f"{n_tests}개 검정을 동시에 했으므로 본페로니 보정 기준 |z| ≥ {st.norm.ppf(1 - 0.025 / n_tests):.2f} 이어야 유의하다.")
     sig = [(k, v) for k, v in wf.items() if abs(v[0]) >= st.norm.ppf(1 - 0.025 / n_tests)]
     say(f"→ 유의한 전략: {', '.join(f'{k[0]}(K={k[1]})' for k, _ in sig) if sig else '없음'}")
+    SUMMARY["strategies_tested"] = n_tests
+    SUMMARY["max_abs_z"] = float(max(abs(v[0]) for v in wf.values()))
+    SUMMARY["significant"] = [f"{k[0]}(K={k[1]})" for k, _ in sig]
     say()
 
     say("### A3. 구조 검정")
@@ -287,6 +296,8 @@ def part_b(raw):
     say(f"- 중앙값: 배율 ×{q[1]:.2f}, 기대 몫 {np.median(share):.1%}")
     say(f"- 인기도 상위 1%: 배율 ×{q[2]:.2f}, 기대 몫 {np.mean(share[popc>=q[2]]):.1%}")
     gain = np.mean(share[popc <= q[0]]) / np.median(share)
+    SUMMARY["popularity_p"] = float(pval)
+    SUMMARY["popularity_gain"] = float(gain)
     say(f"→ 같은 1등이라도 저인기(하위 1%) 조합의 기대 수령액은 중앙값 조합의 약 **{gain:.2f}배**")
     say()
     say("※ 이 모델은 '당첨자들이 고른 조합'의 부분집합(3~5개 번호) 인기도로 학습했다. 1-2-3-4-5-6 같은")
@@ -307,6 +318,7 @@ def main():
     part_a(raw, mach)
     part_b(raw)
     (ROOT / "research" / "REPORT.md").write_text("\n".join(out) + "\n")
+    (ROOT / "data" / "research_summary.json").write_text(json.dumps(SUMMARY, ensure_ascii=False, indent=1))
 
 
 if __name__ == "__main__":
