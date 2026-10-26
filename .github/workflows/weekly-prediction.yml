@@ -1,0 +1,55 @@
+# 매주 월요일 08:00 KST 주간 로또 분석 (Claude 루틴 대체 — 토큰 사용 없음).
+# 편향 검정·인기도 모델 재학습(research.py) → 추천·검증·지난주 채점(lotto_predict.py) → 커밋.
+# 앱은 이 결과(predictions/<회차>.json)를 읽고, 폰 알림도 앱이 직접 띄운다.
+name: Weekly lotto prediction
+
+on:
+  schedule:
+    - cron: "0 23 * * 0"   # UTC 일요일 23:00 = KST 월요일 08:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-prediction
+  cancel-in-progress: false
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install research dependencies
+        run: python -m pip install --quiet numpy scipy
+
+      - name: Retrain bias tests and popularity model
+        # 실패해도 기존 모델로 예측은 계속한다
+        continue-on-error: true
+        run: python research/research.py
+
+      - name: Generate prediction
+        run: python lotto_predict.py
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A data predictions research/REPORT.md LATEST.md
+          if git diff --cached --quiet; then
+            echo "변경 없음"
+            exit 0
+          fi
+          DRAW=$(python -c "import json,glob,os;f=max(glob.glob('predictions/*.json'),key=lambda p:int(os.path.basename(p)[:-5]));print(json.load(open(f))['draw'])")
+          git commit -m "Lotto prediction for draw ${DRAW}"
+          for i in 1 2 3 4; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((2 ** i))
+          done
+          exit 1
