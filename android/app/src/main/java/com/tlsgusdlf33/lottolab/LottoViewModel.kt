@@ -19,8 +19,10 @@ data class UiState(
     val source: Source? = null,
     val targetDraw: Int = 0,
     val targetDate: String = "",
-    /** 주간 루틴 결과를 못 받았을 때만 쓰는 앱 자체 생성 추천 (같은 방법, 다른 난수). */
+    /** 이 기기 전용 이번 주 추천 (주간 루틴과 같은 방법·같은 모델, 기기별 비밀 시드). */
     val picks: List<Pick> = emptyList(),
+    /** 처음 쓴 회차부터의 성적표. */
+    val report: ReportCard? = null,
     /** '새로 뽑기'로 만든 추가 조합. */
     val extraPicks: List<Pick> = emptyList(),
     val weekly: WeeklyPrediction? = null,
@@ -30,6 +32,7 @@ data class UiState(
 
 class LottoViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = DataRepository(app)
+    private val store = PersonalStore(app)
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
 
@@ -44,15 +47,22 @@ class LottoViewModel(app: Application) : AndroidViewModel(app) {
                 val list = draws.value
                 val target = list.last().no + 1
                 val date = LocalDate.parse(list.last().date).plusDays(7).toString()
-                // 기본 추천 = 주간 루틴이 올린 predictions/<회차>.json (알림·채점과 같은 번호).
+                // 검증 결과·재학습 모델은 주간 루틴(GitHub Actions) 결과, 번호는 기기별로 따로.
                 val weekly = repo.weekly(target)
-                val (stats, picks) = withContext(Dispatchers.Default) {
-                    LottoEngine.stats(list) to
-                        if (weekly == null) LottoEngine.pickUnpopular(list, model, target.toLong()) else emptyList()
+                val (stats, picks, report) = withContext(Dispatchers.Default) {
+                    val sets = store.picksFor(target, list, model)
+                    val tickets = LottoEngine.avgTickets(list)
+                    val median = LottoEngine.medianPopularity(model)
+                    val base = LottoEngine.jackpotShare(median, tickets)
+                    val picks = sets.map {
+                        val p = LottoEngine.popularity(it, model)
+                        Pick(it, p, LottoEngine.jackpotShare(p, tickets) / base)
+                    }
+                    Triple(LottoEngine.stats(list), picks, PersonalStore.report(store.history(), list))
                 }
                 _state.value = _state.value.copy(
                     loading = false, draws = list, model = model, stats = stats, source = draws.source,
-                    targetDraw = target, targetDate = date, picks = picks, weekly = weekly,
+                    targetDraw = target, targetDate = date, picks = picks, weekly = weekly, report = report,
                 )
             }.onFailure {
                 _state.value = _state.value.copy(loading = false, error = it.message ?: "데이터를 불러오지 못했습니다")

@@ -32,8 +32,14 @@ class WeeklyCheckWorker(ctx: Context, params: WorkerParameters) : CoroutineWorke
         val target = latest + 1
         val prefs = applicationContext.getSharedPreferences("notify", Context.MODE_PRIVATE)
         if (prefs.getInt("last_notified", 0) >= target) return Result.success()
+        // 주간 재학습(월요일 08:00 GitHub Actions)이 올라온 뒤 그 모델로 내 번호를 만든다.
         val w = repo.weekly(target) ?: return Result.success()  // 아직 안 올라옴 → 다음 확인 때
-        WeeklyNotifier.show(applicationContext, w)
+        val draws = repo.draws().value
+        if (draws.last().no + 1 != target) return Result.retry()
+        val store = PersonalStore(applicationContext)
+        val sets = store.picksFor(target, draws, repo.model().value)
+        val last = PersonalStore.report(store.history(), draws).entries.firstOrNull { it.done && it.entry.draw == latest }
+        WeeklyNotifier.show(applicationContext, target, sets, last)
         prefs.edit().putInt("last_notified", target).apply()
         return Result.success()
     }
@@ -50,19 +56,19 @@ object WeeklyNotifier {
             .enqueueUniquePeriodicWork("weekly-check", ExistingPeriodicWorkPolicy.KEEP, req)
     }
 
-    fun show(context: Context, w: WeeklyPrediction) {
+    fun show(context: Context, draw: Int, sets: List<List<Int>>, last: GradedEntry?) {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "주간 추천 번호", NotificationManager.IMPORTANCE_DEFAULT))
         val fmt = { s: List<Int> -> s.joinToString(" ") { "%02d".format(it) } }
-        val review = w.review?.let { r ->
-            val best = r.sets.minOfOrNull { if (it.rank == 0) 9 else it.rank } ?: 9
-            ", 지난주 최고 ${r.bestHits}개 일치" + if (best < 9) "(${best}등)" else ""
+        val review = last?.let { g ->
+            val best = g.rows.filter { it.rank > 0 }.minOfOrNull { it.rank }
+            ", 지난주 최고 ${g.bestHits}개 일치" + (best?.let { "(${it}등)" } ?: "")
         } ?: ""
-        val title = "제${w.draw}회 추천 번호가 나왔어요"
-        val text = "A ${fmt(w.sets[0])} / B ${fmt(w.sets.getOrElse(1) { emptyList() })}$review"
+        val title = "제${draw}회 내 추천 번호가 나왔어요"
+        val text = "A ${fmt(sets[0])} / B ${fmt(sets.getOrElse(1) { emptyList() })}$review"
         val pi = PendingIntent.getActivity(
             context, 0, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
@@ -72,11 +78,11 @@ object WeeklyNotifier {
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(
-                w.sets.mapIndexed { i, s -> "${'A' + i}  ${fmt(s)}" }.joinToString("\n") + "\n" + review.removePrefix(", ")
+                sets.mapIndexed { i, s -> "${'A' + i}  ${fmt(s)}" }.joinToString("\n") + "\n" + review.removePrefix(", ")
             ))
             .setContentIntent(pi)
             .setAutoCancel(true)
             .build()
-        runCatching { NotificationManagerCompat.from(context).notify(w.draw, n) }
+        runCatching { NotificationManagerCompat.from(context).notify(draw, n) }
     }
 }

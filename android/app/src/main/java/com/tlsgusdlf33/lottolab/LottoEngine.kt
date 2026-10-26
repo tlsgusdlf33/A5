@@ -234,11 +234,16 @@ object LottoEngine {
         return r
     }
 
-    fun medianShare(draws: List<Draw>, model: PopularityModel, combo: List<Int>): Double {
+    /** 무작위 조합 인기도의 중앙값 (기대 수령액 배율의 기준). */
+    fun medianPopularity(m: PopularityModel): Double {
         val rng = Random(7)
-        val pops = List(2000) { popularity((1..45).shuffled(rng).take(6).sorted(), model) }.sorted()
+        val pops = List(4000) { popularity((1..45).shuffled(rng).take(6).sorted(), m) }.sorted()
+        return pops[pops.size / 2]
+    }
+
+    fun medianShare(draws: List<Draw>, model: PopularityModel, combo: List<Int>): Double {
         val tickets = avgTickets(draws)
-        return jackpotShare(popularity(combo, model), tickets) / jackpotShare(pops[pops.size / 2], tickets)
+        return jackpotShare(popularity(combo, model), tickets) / jackpotShare(medianPopularity(model), tickets)
     }
 
     fun rank(pick: List<Int>, d: Draw): Int {

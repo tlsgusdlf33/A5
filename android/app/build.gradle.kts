@@ -20,8 +20,8 @@ android {
         applicationId = "com.tlsgusdlf33.lottolab"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.3.0"
+        versionCode = 5
+        versionName = "1.4.0"
 
         // AdMob: 현재는 Google 공식 테스트 ID. 출시 전 본인 AdMob ID 로 교체.
         manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"

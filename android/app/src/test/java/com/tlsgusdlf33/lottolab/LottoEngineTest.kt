@@ -95,4 +95,32 @@ class LottoEngineTest {
         assertEquals(5, LottoEngine.rank(listOf(1, 2, 3, 10, 9, 8), d))
         assertEquals(0, LottoEngine.rank(listOf(1, 2, 11, 10, 9, 8), d))
     }
+
+    @Test
+    fun differentSeedsGiveDifferentPicks() {
+        val d = draws()
+        val a = LottoEngine.pickUnpopular(d, model(), 111L).map { it.numbers }.toSet()
+        val b = LottoEngine.pickUnpopular(d, model(), 222L).map { it.numbers }.toSet()
+        assertTrue((a intersect b).isEmpty())
+    }
+
+    @Test
+    fun reportCardGrading() {
+        val d = listOf(
+            Draw(10, "2026-01-03", listOf(1, 2, 3, 4, 5, 6), 7, prizes = listOf(2_000_000_000, 50_000_000, 1_500_000, 50_000, 5_000)),
+        )
+        val h = listOf(
+            HistoryEntry(10, listOf(listOf(1, 2, 3, 10, 11, 12), listOf(1, 2, 3, 4, 5, 7), listOf(20, 21, 22, 23, 24, 25)), 0),
+            HistoryEntry(11, listOf(listOf(1, 2, 3, 4, 5, 6)), 0),  // 추첨 전
+        )
+        val r = PersonalStore.report(h, d)
+        assertEquals(1, r.rounds)
+        assertEquals(3, r.games)
+        assertEquals(3000L, r.spent)
+        assertEquals(5_000L + 50_000_000L, r.won)
+        assertEquals(1, r.rankCounts[5])
+        assertEquals(1, r.rankCounts[2])
+        assertEquals(11, r.entries.first().entry.draw)
+        assertFalse(r.entries.first().done)
+    }
 }

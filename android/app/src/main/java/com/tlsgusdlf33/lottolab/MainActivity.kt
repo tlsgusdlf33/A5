@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
@@ -99,7 +100,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Tab(val label: String) { PICKS("이번 주 추천"), RESULTS("당첨 결과"), ANALYSIS("분석"), CHECK("내 번호") }
+private enum class Tab(val label: String) {
+    PICKS("이번 주 추천"), REPORT("성적표"), RESULTS("당첨 결과"), ANALYSIS("분석"), CHECK("내 번호")
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,6 +129,7 @@ private fun App(activity: Activity, adsReady: Boolean, vm: LottoViewModel = view
                                 Icon(
                                     when (t) {
                                         Tab.PICKS -> Icons.Filled.Star
+                                        Tab.REPORT -> Icons.Filled.DateRange
                                         Tab.RESULTS -> Icons.Filled.List
                                         Tab.ANALYSIS -> Icons.Filled.Info
                                         Tab.CHECK -> Icons.Filled.Search
@@ -163,6 +167,7 @@ private fun App(activity: Activity, adsReady: Boolean, vm: LottoViewModel = view
                         vm.regenerate()
                         Ads.onUserAction(activity)
                     }, onRefresh = vm::refresh)
+                    Tab.REPORT -> ReportScreen(state)
                     Tab.RESULTS -> ResultsScreen(state)
                     Tab.ANALYSIS -> AnalysisScreen(state)
                     Tab.CHECK -> CheckScreen(state, onCheck = { Ads.onUserAction(activity) })
@@ -320,17 +325,11 @@ private fun PicksScreen(s: UiState, onRegenerate: () -> Unit, onRefresh: () -> U
     LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Section("제${s.targetDraw}회 추천 번호") {
-                if (w != null) {
-                    Note("${s.targetDate} 추첨 · 주간 분석 루틴 결과 (제1~${s.draws.last().no}회 분석, 알림과 같은 번호)")
-                    Spacer(Modifier.height(10.dp))
-                    PickRows(w.sets, w.popularity, w.shareVsMedian)
-                    CoverageLine(w.sets, w.maxOverlap)
-                } else {
-                    Note("${s.targetDate} 추첨 · 주간 루틴 결과가 아직 없어 앱에서 같은 방법으로 생성 · ${sourceLabel(s.source)}")
-                    Spacer(Modifier.height(10.dp))
-                    PickRows(s.picks.map { it.numbers }, s.picks.map { it.popularity }, s.picks.map { it.shareVsMedian })
-                    if (s.picks.isNotEmpty()) CoverageLine(s.picks.map { it.numbers }, null)
-                }
+                Note("${s.targetDate} 추첨 · 이 기기 전용 번호 (사용자마다 다름) · 제1~${s.draws.last().no}회 분석" +
+                    if (w == null) " · ${sourceLabel(s.source)}" else "")
+                Spacer(Modifier.height(10.dp))
+                PickRows(s.picks.map { it.numbers }, s.picks.map { it.popularity }, s.picks.map { it.shareVsMedian })
+                if (s.picks.isNotEmpty()) CoverageLine(s.picks.map { it.numbers }, null)
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onRegenerate, enabled = !s.generating) {
@@ -352,7 +351,9 @@ private fun PicksScreen(s: UiState, onRegenerate: () -> Unit, onRefresh: () -> U
             }
         }
         w?.verification?.let { v -> item { VerificationCard(v, s) } }
-        w?.review?.let { r -> item { ReviewCard(r) } }
+        s.report?.entries?.firstOrNull { it.done && it.entry.draw == s.draws.last().no }?.let { g ->
+            item { ReviewCard(g) }
+        }
         item {
             Section("이 번호는 어떻게 골랐나요?") {
                 Note(
@@ -396,46 +397,91 @@ private fun VerificationCard(v: Verification, s: UiState) {
                 "(${if ((v.popularityP ?: 1.0) < 0.05) "통과" else "미통과 — 사용 안 함"})" +
                 (v.popularityGain?.let { "\n인기도 하위 1% 조합의 1등 기대 수령액: 보통 조합의 ×${"%.2f".format(it)}" } ?: "")
         )
-        s.weekly?.coverage?.let { c ->
+        if (s.picks.isNotEmpty()) {
+            val sets = s.picks.map { it.numbers }
+            val p5 = remember(sets) { LottoEngine.pAnyMatch(sets, 3) }
+            val p4 = remember(sets) { LottoEngine.pAnyMatch(sets, 4) }
             Spacer(Modifier.height(8.dp))
-            Text("④ 당첨 범위 (승률)", fontWeight = FontWeight.SemiBold)
+            Text("④ 당첨 범위 (승률) — 내 번호 기준", fontWeight = FontWeight.SemiBold)
             Note(
-                "5세트 중 하나라도 5등 이상 ${pct(c.pAny5th)} (무작위 5세트 ${pct(c.randomAny5th)})" +
-                    "\n하나라도 4등 이상 ${pct(c.pAny4th)} (무작위 ${pct(c.randomAny4th)})"
+                "5세트 중 하나라도 5등 이상 ${pct(p5)} (무작위 5세트 ${pct(LottoEngine.randomAny5th(5))})" +
+                    "\n하나라도 4등 이상 ${pct(p4)}"
             )
         }
     }
 }
 
 @Composable
-private fun ReviewCard(r: Review) {
-    Section("지난주 결과 검토 (제${r.draw}회)") {
-        Note("${r.date} 당첨번호")
+private fun GradedSets(g: GradedEntry, size: Int = 26) {
+    g.entry.sets.forEachIndexed { i, set ->
+        val row = g.rows.getOrNull(i)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
+            Text("${'A' + i}", fontWeight = FontWeight.Bold, modifier = Modifier.width(20.dp))
+            BallRow(set, size = size, highlight = row?.hits?.toSet() ?: emptySet())
+            Spacer(Modifier.width(6.dp))
+            if (row != null) Text(
+                if (row.rank == 0) "${row.hits.size}개" else "${row.rank}등",
+                fontSize = 12.sp,
+                fontWeight = if (row.rank > 0) FontWeight.Bold else FontWeight.Normal,
+                color = if (row.rank > 0) Color(0xFFB45309) else Color(0xFF6B7280),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReviewCard(g: GradedEntry) {
+    val d = g.draw ?: return
+    Section("지난주 결과 검토 (제${d.no}회)") {
+        Note("${d.date} 당첨번호 · 이 기기에서 받은 추천 기준")
         Spacer(Modifier.height(6.dp))
-        BallRow(r.numbers, r.bonus, size = 30)
+        BallRow(d.numbers, d.bonus, size = 30)
         Spacer(Modifier.height(10.dp))
-        r.sets.forEachIndexed { i, x ->
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-                Text("${'A' + i}", fontWeight = FontWeight.Bold, modifier = Modifier.width(20.dp))
-                BallRow(x.numbers, size = 26, highlight = x.hits.toSet())
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    if (x.rank == 0) "${x.hits.size}개" else "${x.rank}등",
-                    fontSize = 12.sp,
-                    fontWeight = if (x.rank > 0) FontWeight.Bold else FontWeight.Normal,
-                    color = if (x.rank > 0) Color(0xFFB45309) else Color(0xFF6B7280),
-                )
+        GradedSets(g)
+        Spacer(Modifier.height(8.dp))
+        Text("최고 ${g.bestHits}개 일치 · 당첨금 ${won(g.won)} / 구매 ${won(g.spent)}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Note("5세트로 5등 이상이 하나라도 나올 확률은 매주 약 11.6%라서 대부분의 주는 낙첨입니다. 누적 결과는 '성적표' 탭에서 보세요.")
+    }
+}
+
+// ------------------------------------------------------------------ 성적표
+@Composable
+private fun ReportScreen(s: UiState) {
+    val r = s.report ?: return
+    LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Section("누적 성적표") {
+                if (r.rounds == 0) {
+                    Note("아직 추첨이 끝난 회차가 없습니다. 이번 주 추천을 받은 회차부터 매주 자동으로 채점됩니다.")
+                } else {
+                    Text("${r.rounds}회차 · ${r.games}게임", fontWeight = FontWeight.SemiBold)
+                    Text("구매 ${won(r.spent)} · 당첨 ${won(r.won)} · 환수율 ${"%.0f".format(100.0 * r.won / r.spent)}%",
+                        fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy)
+                    Spacer(Modifier.height(8.dp))
+                    Text((1..5).joinToString("  ") { "${it}등 ${r.rankCounts[it]}" }, fontSize = 14.sp)
+                    Note(
+                        "5등 이상 ${(1..5).sumOf { r.rankCounts[it] }}게임 (무작위 기대 ${"%.1f".format(r.expectedWins)}게임)\n" +
+                            "일치 개수: " + (0..6).filter { r.hitCounts[it] > 0 }.joinToString(", ") { "${it}개 ${r.hitCounts[it]}" }
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Note("1게임 1,000원, 추천 5세트를 모두 샀다고 가정한 기록입니다. 로또의 평균 환수율은 약 50%입니다.")
+                }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "최고 ${r.bestHits}개 일치 · 당첨금 ${won(r.won)} / 구매 ${won(r.spent)}",
-            fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
-        )
-        Note(
-            "5세트 기준 5등 이상 당첨 확률은 매주 약 11.6%라서, 대부분의 주는 낙첨입니다. " +
-                "한 주의 결과로 방법의 좋고 나쁨을 판단할 수 없습니다."
-        )
+        items(r.entries, key = { it.entry.draw }) { g ->
+            Section("제${g.entry.draw}회" + (g.draw?.let { " · ${it.date}" } ?: " · 추첨 전")) {
+                g.draw?.let {
+                    BallRow(it.numbers, it.bonus, size = 26)
+                    Spacer(Modifier.height(8.dp))
+                }
+                GradedSets(g)
+                if (g.done) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("최고 ${g.bestHits}개 · 당첨금 ${won(g.won)}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        item { Disclaimer() }
     }
 }
 
