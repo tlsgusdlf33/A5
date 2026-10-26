@@ -1,9 +1,13 @@
 package com.tlsgusdlf33.lottolab
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -75,11 +79,18 @@ private val Navy = Color(0xFF1E3A8A)
 
 class MainActivity : ComponentActivity() {
     private var adsReady by mutableStateOf(false)
+    private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         Ads.start(this) { adsReady = true }
+        WeeklyNotifier.schedule(this)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent {
             MaterialTheme(colorScheme = lightColorScheme(primary = Navy, secondary = Color(0xFFFBC400))) {
                 App(this, adsReady)

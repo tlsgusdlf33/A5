@@ -96,6 +96,13 @@ class DataRepository(private val context: Context) {
         Loaded(parseModel(asset("popularity_model.json")), Source.BUNDLED)
     }
 
+    /** 가장 최근 추첨 회차 번호 (작은 파일만 받아 알림 확인용으로 사용). */
+    suspend fun latestDrawNo(): Int? = withContext(Dispatchers.IO) {
+        fetch("https://smok95.github.io/lotto/results/latest.json")?.let {
+            runCatching { JSONObject(it).getInt("draw_no") }.getOrNull()
+        }
+    }
+
     suspend fun weekly(draw: Int): WeeklyPrediction? = withContext(Dispatchers.IO) {
         val cache = File(context.filesDir, "weekly_$draw.json")
         val text = fetch(base + "predictions/$draw.json")?.also { cache.writeText(it) }

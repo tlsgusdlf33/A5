@@ -1,6 +1,7 @@
 # 로또 6/45 주간 예측
 
-매주 월요일 08:00(KST)에 Claude Code 루틴이 `lotto_predict.py`를 실행해
+매주 월요일 08:00(KST)에 GitHub Actions(`.github/workflows/weekly-prediction.yml`, Claude 토큰 사용 없음)가
+`research/research.py`(재학습)와 `lotto_predict.py`를 실행해
 역대 1등 당첨번호 전체를 분석하고 그 주 토요일 추첨 회차의 추천 번호 5세트를 만든다.
 
 예측 전에 워크포워드 백테스트를 돌린다. 후보 전략(전체 빈도, 최근 빈도, 미출현 기간,
@@ -50,6 +51,7 @@ python3 lotto_predict.py
 - **당첨 결과**: 최근 30회. **분석**: 카이제곱 무작위성 검정, 번호별 출현 횟수, 참고 통계.
 - **내 번호**: 6개를 골라 역대 등수 이력, 인기도, 1등 시 기대 수령액 배율 확인.
 - 데이터: smok95 미러(동행복권 데이터) → 앱 캐시 → APK 내장 데이터 순. 인기도 모델은 이 저장소에서 매주 갱신본을 받음.
+- 알림: 앱이 4시간마다 가볍게 확인해 새 회차 추천이 올라오면 회차당 1번 알림 (WorkManager).
 - 광고: AdMob 하단 배너 + '새로 뽑기'/'확인하기'를 누를 때마다 전면 광고, UMP 동의. **현재 Google 테스트 광고 ID** —
   출시 전 `android/app/build.gradle.kts` 의 `admobAppId`, `BANNER_AD_UNIT`, `INTERSTITIAL_AD_UNIT` 을 본인 ID 로 교체.
 
