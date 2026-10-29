@@ -153,7 +153,8 @@ object LottoEngine {
         var guard = 0
         while (cands.size < CANDIDATES && guard++ < 500_000) {
             val c = (1..45).shuffled(rng).take(6).sorted()
-            if (c !in past && valid(c, s, last) && !obviousPattern(c)) cands.add(c)
+            // 개인 전용 영역(isReserved) 조합은 일반 사용자에게 절대 주지 않는다.
+            if (c !in past && valid(c, s, last) && !obviousPattern(c) && !isReserved(c)) cands.add(c)
         }
         val pop = cands.associateWith { popularity(it, model) }
         val scored = cands.sortedWith(compareBy<List<Int>> { pop.getValue(it) }.thenBy { it.joinToString() })
@@ -192,6 +193,85 @@ object LottoEngine {
             val p = pop.getValue(it)
             Pick(it, p, jackpotShare(p, tickets) / base)
         }
+    }
+
+    /**
+     * 개인 전용 영역: 전체 조합의 약 1/7. 개인 앱은 이 영역에서만, 일반 앱은 이 영역 밖에서만 고른다.
+     * → 개인 번호와 똑같은 조합이 일반 사용자에게 갈 수 없다. 규칙은 공개돼도 영역이 약 116만 조합이라
+     *   개인 번호를 알아낼 수 없다. lotto_features.is_reserved 와 같은 식.
+     */
+    fun isReserved(combo: List<Int>): Boolean {
+        var h = 0L
+        for (n in combo.sorted()) h = (h * 131 + n) % 1_000_003
+        return h % 7 == 0L
+    }
+
+    /**
+     * 개인 앱 전용 추천 (lotto-private 의 personal_predict.py 와 같은 방법).
+     * 개인 영역 안에서 후보 5만 개 → 공개 추천과 4개 이상 겹치는 조합 제외 →
+     * 세트 간 겹침 0개(커버리지 최대 11.87%) 중 가장 인기 있는 세트가 최소가 되는 5세트.
+     */
+    fun pickOwner(
+        draws: List<Draw>, model: PopularityModel, seed: Long, avoid: List<List<Int>>,
+        candidates: Int = 50_000, disjointCap: Double = 0.96,
+    ): List<Pick> {
+        val s = stats(draws)
+        val rng = Random(seed)
+        val last = draws.last().numbers
+        val past = draws.map { it.numbers.sorted() }.toHashSet()
+        val cands = HashSet<List<Int>>()
+        var guard = 0
+        while (cands.size < candidates && guard++ < 5_000_000) {
+            val c = sample6(rng)
+            if (!isReserved(c) || c in past || !valid(c, s, last) || obviousPattern(c)) continue
+            if (avoid.any { a -> a.count { it in c } >= 4 }) continue
+            cands.add(c)
+        }
+        val pop = cands.associateWith { popularity(it, model) }
+        val scored = cands.sortedWith(compareBy<List<Int>> { pop.getValue(it) }.thenBy { it.joinToString() })
+        val median = medianPopularity(model)
+
+        fun greedy(order: List<List<Int>>, maxOverlap: Int): List<List<Int>>? {
+            val out = mutableListOf<List<Int>>()
+            for (c in order) {
+                if (out.all { o -> o.count { it in c } <= maxOverlap }) {
+                    out += c
+                    if (out.size == SETS) return out
+                }
+            }
+            return null
+        }
+
+        val dpool = scored.filter { pop.getValue(it) <= disjointCap }
+        var best: List<List<Int>>? = null
+        var bestMax = Double.MAX_VALUE
+        var bestAvg = Double.MAX_VALUE
+        for (start in dpool.take(400)) {
+            val g = greedy(listOf(start) + dpool, 0) ?: continue
+            val mx = g.maxOf { pop.getValue(it) }
+            val avg = g.sumOf { pop.getValue(it) } / SETS
+            if (mx < bestMax - 1e-12 || (abs(mx - bestMax) <= 1e-12 && avg < bestAvg)) {
+                best = g; bestMax = mx; bestAvg = avg
+            }
+        }
+        val chosen = best ?: greedy(scored, 1) ?: greedy(scored, 2) ?: scored.take(SETS)
+        val tickets = avgTickets(draws)
+        val base = jackpotShare(median, tickets)
+        return chosen.sortedBy { pop.getValue(it) }.map {
+            val p = pop.getValue(it)
+            Pick(it, p, jackpotShare(p, tickets) / base)
+        }
+    }
+
+    /** 1~45 중 서로 다른 6개를 정렬해서 (shuffle 없이 빠르게). */
+    private fun sample6(rng: Random): List<Int> {
+        val picked = BooleanArray(46)
+        var k = 0
+        while (k < 6) {
+            val n = rng.nextInt(1, 46)
+            if (!picked[n]) { picked[n] = true; k++ }
+        }
+        return (1..45).filter { picked[it] }
     }
 
     /** 세트 1개가 5등 이상일 확률 (3개 이상 일치). */

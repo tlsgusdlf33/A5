@@ -6,3 +6,4 @@ keystore.properties
 *.jks
 *.keystore
 .kotlin/
+app/src/personal/assets/owner_history.json

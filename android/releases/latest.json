@@ -1,7 +1,7 @@
 {
-  "versionCode": 5,
-  "versionName": "1.4.0",
-  "apkUrl": "android/releases/LottoLab-1.4.0.apk",
-  "sha256": "d13fe03a71a9feae34186ea8947fc7c4e864d826b7717302adcea2ce9e37cdba",
-  "notes": "사용자마다 다른 추천 번호(기기 전용), 성적표 탭 추가(처음 쓴 회차부터 매주 자동 채점), 지난주 검토를 내 번호 기준으로"
+  "versionCode": 6,
+  "versionName": "1.5.0",
+  "apkUrl": "android/releases/LottoLab-1.5.0.apk",
+  "sha256": "99dad779892de9523a660b6bac5dd9a2bdf7227169e772e3b0d461cc0474b354",
+  "notes": "개인 전용 번호 영역과 겹치지 않도록 추천 범위 조정 (다음 회차부터 적용)"
 }

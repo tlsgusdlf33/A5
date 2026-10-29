@@ -36,9 +36,9 @@ class WeeklyCheckWorker(ctx: Context, params: WorkerParameters) : CoroutineWorke
         val w = repo.weekly(target) ?: return Result.success()  // 아직 안 올라옴 → 다음 확인 때
         val draws = repo.draws().value
         if (draws.last().no + 1 != target) return Result.retry()
-        val store = PersonalStore(applicationContext)
-        val sets = store.picksFor(target, draws, repo.model().value)
-        val last = PersonalStore.report(store.history(), draws).entries.firstOrNull { it.done && it.entry.draw == latest }
+        val sets = Flavor.picksFor(applicationContext, target, draws, repo.model().value, w.sets)
+        val last = PersonalStore.report(Flavor.history(applicationContext), draws).entries
+            .firstOrNull { it.done && it.entry.draw == latest }
         WeeklyNotifier.show(applicationContext, target, sets, last)
         prefs.edit().putInt("last_notified", target).apply()
         return Result.success()
@@ -61,16 +61,16 @@ object WeeklyNotifier {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
         val nm = context.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "주간 추천 번호", NotificationManager.IMPORTANCE_DEFAULT))
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "주간 추천 번호", NotificationManager.IMPORTANCE_HIGH))
         val fmt = { s: List<Int> -> s.joinToString(" ") { "%02d".format(it) } }
         val review = last?.let { g ->
             val best = g.rows.filter { it.rank > 0 }.minOfOrNull { it.rank }
             ", 지난주 최고 ${g.bestHits}개 일치" + (best?.let { "(${it}등)" } ?: "")
         } ?: ""
-        val title = "제${draw}회 내 추천 번호가 나왔어요"
+        val title = "제${draw}회 ${Flavor.NOTIFY_LABEL}"
         val text = "A ${fmt(sets[0])} / B ${fmt(sets.getOrElse(1) { emptyList() })}$review"
         val pi = PendingIntent.getActivity(
-            context, 0, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            context, 0, Intent(context, Flavor.launchActivity).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val n = NotificationCompat.Builder(context, CHANNEL)

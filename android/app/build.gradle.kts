@@ -20,8 +20,8 @@ android {
         applicationId = "com.tlsgusdlf33.lottolab"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.4.0"
+        versionCode = 6
+        versionName = "1.5.0"
 
         // AdMob: 현재는 Google 공식 테스트 ID. 출시 전 본인 AdMob ID 로 교체.
         manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
@@ -59,6 +59,17 @@ android {
     productFlavors {
         create("sideload") { dimension = "distribution" }
         create("play") { dimension = "distribution" }
+        // 개인 전용 앱: 별도 앱(나란히 설치), 광고·업데이트 없음, 개인 영역 번호.
+        create("personal") {
+            dimension = "distribution"
+            applicationIdSuffix = ".owner"
+            versionNameSuffix = "-personal"
+        }
+    }
+    sourceSets {
+        // 일반 사용자용 화면·광고 코드는 sideload·play 에만 포함
+        getByName("sideload").java.srcDir("src/public/java")
+        getByName("play").java.srcDir("src/public/java")
     }
 
     compileOptions {
@@ -85,9 +96,12 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
-    implementation("androidx.fragment:fragment-ktx:1.8.5")  // AdMob 이 끌어오는 구버전 대체 (ActivityResult API 요구)
-    implementation("com.google.android.gms:play-services-ads:23.6.0")
-    implementation("com.google.android.ump:user-messaging-platform:3.1.0")
+    // 광고는 일반 사용자 앱(sideload·play)에만
+    for (cfg in listOf("sideloadImplementation", "playImplementation")) {
+        add(cfg, "androidx.fragment:fragment-ktx:1.8.5")  // AdMob 이 끌어오는 구버전 대체 (ActivityResult API 요구)
+        add(cfg, "com.google.android.gms:play-services-ads:23.6.0")
+        add(cfg, "com.google.android.ump:user-messaging-platform:3.1.0")
+    }
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

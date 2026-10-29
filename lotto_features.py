@@ -27,3 +27,12 @@ def features(nums):
         sum(nums) / 100,
     ]
     return f + [1.0 if n in nums else 0.0 for n in range(1, 46)]
+
+
+def is_reserved(combo):
+    """개인 전용 영역(전체 조합의 약 1/7). 개인 추천은 이 안에서만, 공개·앱 추천은 밖에서만 고른다.
+    앱의 LottoEngine.isReserved 와 같은 식."""
+    h = 0
+    for n in sorted(combo):
+        h = (h * 131 + n) % 1_000_003
+    return h % 7 == 0

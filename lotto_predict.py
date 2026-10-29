@@ -27,7 +27,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from lotto_features import features
+from lotto_features import features, is_reserved
 
 DATA_URL = "https://smok95.github.io/lotto/results/all.json"
 ROOT = Path(__file__).resolve().parent
@@ -288,7 +288,8 @@ def pick_unpopular(stats, w, draws, seed, model):
         while len(combo) < 6:
             combo.add(rng.choices(pool, wts)[0])
         combo = tuple(sorted(combo))
-        if combo not in past and valid(combo, stats, last_numbers) and not obvious_pattern(combo):
+        if (combo not in past and valid(combo, stats, last_numbers) and not obvious_pattern(combo)
+                and not is_reserved(combo)):  # 개인 전용 영역은 공개 추천에서 제외
             cands.add(combo)
     scored = sorted(cands, key=lambda c: (popularity(c, model), c))
     median = sorted(popularity(c, model) for c in cands)[len(cands) // 2]

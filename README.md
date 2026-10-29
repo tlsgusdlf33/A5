@@ -67,6 +67,10 @@ cd android
 ```
 
 빌드 종류(flavor):
+- `personal` — 개인 전용 앱(`com.tlsgusdlf33.lottolab.owner`, "로또 개인 추천"). 광고·업데이트·부가 기능 없이
+  주간 추천·검증·지난주 검토·성적표·월요일 알림만. 개인 전용 영역(`isReserved`, 전체 조합의 약 1/7)에서만
+  후보 5만 개·세트 간 겹침 0개로 고른다. 일반 앱(sideload·play)과 공개 추천은 이 영역을 쓰지 않으므로
+  개인 번호와 같은 조합이 일반 사용자에게 갈 수 없다. 이전 기록 파일(`owner_history.json`)은 비공개 저장소에만 둔다.
 - `sideload` — 폰에 직접 설치하는 테스트용. 실행 시 `android/releases/latest.json` 을 확인해 새 버전이 있으면
   APK 를 받아 SHA-256 검증 후 기존 앱 위에 업데이트(재설치 불필요). 최초 1회 '이 출처 허용'만 켜면 된다.
 - `play` — Google Play 출시용. Play 정책상 자체 업데이트 기능과 `REQUEST_INSTALL_PACKAGES` 권한이 빠져 있다.

@@ -123,4 +123,33 @@ class LottoEngineTest {
         assertEquals(11, r.entries.first().entry.draw)
         assertFalse(r.entries.first().done)
     }
+
+    /** lotto_features.is_reserved 와 같은 결과 (Python 에서 뽑은 값). */
+    @Test
+    fun reservedRuleMatchesPython() {
+        for (c in listOf(listOf(7, 16, 24, 25, 31, 35), listOf(1, 9, 29, 40, 41, 43), listOf(6, 18, 20, 21, 35, 42)))
+            assertTrue(LottoEngine.isReserved(c))
+        for (c in listOf(listOf(2, 17, 23, 34, 40, 42), listOf(4, 8, 11, 16, 30, 42), listOf(1, 14, 16, 18, 27, 37)))
+            assertFalse(LottoEngine.isReserved(c))
+    }
+
+    @Test
+    fun publicPicksNeverReserved() {
+        val d = draws()
+        for (seed in 1L..20L) {
+            assertTrue(LottoEngine.pickUnpopular(d, model(), seed).none { LottoEngine.isReserved(it.numbers) })
+        }
+    }
+
+    @Test
+    fun ownerPicksReservedDisjointAndAvoidPublic() {
+        val d = draws()
+        val pub = LottoEngine.pickUnpopular(d, model(), 1249).map { it.numbers }
+        val own = LottoEngine.pickOwner(d, model(), 42L, pub).map { it.numbers }
+        assertEquals(5, own.size)
+        assertTrue(own.all { LottoEngine.isReserved(it) })
+        for ((i, a) in own.withIndex()) for (b in own.drop(i + 1)) assertEquals(0, a.count { it in b })
+        assertTrue(own.all { o -> pub.all { p -> o.count { it in p } < 4 } })
+        assertEquals(0.11867929763562209, LottoEngine.pAnyMatch(own, 3), 1e-12)
+    }
 }
