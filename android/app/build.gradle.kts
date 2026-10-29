@@ -14,14 +14,14 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "com.tlsgusdlf33.lottolab"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.tlsgusdlf33.lottolab"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 6
-        versionName = "1.5.0"
+        targetSdk = 36
+        versionCode = 7
+        versionName = "1.6.0"
 
         // AdMob: 현재는 Google 공식 테스트 ID. 출시 전 본인 AdMob ID 로 교체.
         manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"

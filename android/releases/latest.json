@@ -1,7 +1,7 @@
 {
-  "versionCode": 6,
-  "versionName": "1.5.0",
-  "apkUrl": "android/releases/LottoLab-1.5.0.apk",
-  "sha256": "99dad779892de9523a660b6bac5dd9a2bdf7227169e772e3b0d461cc0474b354",
-  "notes": "개인 전용 번호 영역과 겹치지 않도록 추천 범위 조정 (다음 회차부터 적용)"
+  "versionCode": 7,
+  "versionName": "1.6.0",
+  "apkUrl": "android/releases/LottoLab-1.6.0.apk",
+  "sha256": "4c38a0c2fa2674b9d0940f454388c8f1de0fbd4dd9d07972d532ad71ccdb2c2a",
+  "notes": "Google Play 요구사항(Android 16, API 36) 대응"
 }
