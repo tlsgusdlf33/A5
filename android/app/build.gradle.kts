@@ -20,8 +20,8 @@ android {
         applicationId = "com.tlsgusdlf33.lottolab"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.6.0"
+        versionCode = 8
+        versionName = "1.6.1"
 
         // AdMob: 현재는 Google 공식 테스트 ID. 출시 전 본인 AdMob ID 로 교체.
         manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
@@ -77,7 +77,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    testOptions { unitTests.isReturnDefaultValues = true }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
+        // 스토어 스크린샷: ./gradlew testSideloadDebugUnitTest -PstoreScreenshots=true
+        unitTests.all {
+            it.systemProperty("store.screenshots", project.findProperty("storeScreenshots") ?: "false")
+            it.systemProperty("robolectric.dependency.repo.url", "https://maven-central.storage-download.googleapis.com/maven2/")
+            it.systemProperty("robolectric.dependency.repo.id", "google-central-mirror")
+            it.systemProperty("robolectric.pixelCopyRenderMode", "hardware")
+        }
+    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -105,4 +115,8 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    // 스토어 스크린샷 (실제 화면을 JVM 에서 렌더링)
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

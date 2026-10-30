@@ -211,7 +211,7 @@ fun GradedSets(g: GradedEntry, size: Int = 26) {
         val row = g.rows.getOrNull(i)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
             Text("${'A' + i}", fontWeight = FontWeight.Bold, modifier = Modifier.width(20.dp))
-            BallRow(set, size = size, highlight = row?.hits?.toSet() ?: emptySet())
+            BallRow(set, size = size, highlight = row?.hits?.toSet())  // 추첨 전이면 강조 없이 원래 색
             Spacer(Modifier.width(6.dp))
             if (row != null) Text(
                 if (row.rank == 0) "${row.hits.size}개" else "${row.rank}등",

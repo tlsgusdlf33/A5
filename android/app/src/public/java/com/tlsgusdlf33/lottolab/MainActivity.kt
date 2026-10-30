@@ -99,16 +99,31 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Tab(val label: String) {
-    PICKS("이번 주 추천"), REPORT("성적표"), RESULTS("당첨 결과"), ANALYSIS("분석"), CHECK("내 번호")
+internal enum class Tab(val label: String) {
+    PICKS("추천"), REPORT("성적표"), RESULTS("당첨 결과"), ANALYSIS("분석"), CHECK("내 번호")
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun App(activity: Activity, adsReady: Boolean, vm: LottoViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(Tab.PICKS) }
     UpdatePrompt(activity)
+    AppScaffold(
+        state = state, tab = tab, onTab = { tab = it },
+        banner = { if (adsReady) BannerAd(activity) },
+        onRegenerate = { vm.regenerate(); Ads.onUserAction(activity) },
+        onRefresh = vm::refresh,
+        onCheck = { Ads.onUserAction(activity) },
+    )
+}
+
+/** 화면 골격 (스토어 스크린샷 테스트도 이 함수를 그대로 그린다). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun AppScaffold(
+    state: UiState, tab: Tab, onTab: (Tab) -> Unit, banner: @Composable () -> Unit,
+    onRegenerate: () -> Unit, onRefresh: () -> Unit, onCheck: () -> Unit,
+) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -118,12 +133,12 @@ private fun App(activity: Activity, adsReady: Boolean, vm: LottoViewModel = view
         },
         bottomBar = {
             Column {
-                if (adsReady) BannerAd(activity)
+                banner()
                 NavigationBar {
                     Tab.entries.forEach { t ->
                         NavigationBarItem(
                             selected = tab == t,
-                            onClick = { tab = t },
+                            onClick = { onTab(t) },
                             icon = {
                                 Icon(
                                     when (t) {
@@ -159,17 +174,14 @@ private fun App(activity: Activity, adsReady: Boolean, vm: LottoViewModel = view
                 ) {
                     Text(state.error ?: "", textAlign = TextAlign.Center)
                     Spacer(Modifier.height(12.dp))
-                    Button(onClick = vm::refresh) { Text("다시 시도") }
+                    Button(onClick = onRefresh) { Text("다시 시도") }
                 }
                 else -> when (tab) {
-                    Tab.PICKS -> PicksScreen(state, onRegenerate = {
-                        vm.regenerate()
-                        Ads.onUserAction(activity)
-                    }, onRefresh = vm::refresh)
+                    Tab.PICKS -> PicksScreen(state, onRegenerate = onRegenerate, onRefresh = onRefresh)
                     Tab.REPORT -> ReportScreen(state)
                     Tab.RESULTS -> ResultsScreen(state)
                     Tab.ANALYSIS -> AnalysisScreen(state)
-                    Tab.CHECK -> CheckScreen(state, onCheck = { Ads.onUserAction(activity) })
+                    Tab.CHECK -> CheckScreen(state, onCheck = onCheck)
                 }
             }
         }

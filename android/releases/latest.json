@@ -1,7 +1,7 @@
 {
-  "versionCode": 7,
-  "versionName": "1.6.0",
-  "apkUrl": "android/releases/LottoLab-1.6.0.apk",
-  "sha256": "4c38a0c2fa2674b9d0940f454388c8f1de0fbd4dd9d07972d532ad71ccdb2c2a",
-  "notes": "Google Play 요구사항(Android 16, API 36) 대응"
+  "versionCode": 8,
+  "versionName": "1.6.1",
+  "apkUrl": "android/releases/LottoLab-1.6.1.apk",
+  "sha256": "8aa397f6b957fb4274d9e40e5d45170713207c28555db9f250272414c35365d5",
+  "notes": "탭 이름 줄바꿈 수정, 추첨 전 회차 번호 색 표시 수정, 기본 데이터 최신화"
 }
