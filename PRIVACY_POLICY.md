@@ -1,6 +1,6 @@
 # 개인정보처리방침 — 로또 번호 연구소
 
-시행일: 2026년 10월 29일 · 문의: tlsgusdlf33@gmail.com
+시행일: 2026년 10월 30일 · 운영자: hulkmacaron33 · 문의: hulkmacaron33@gmail.com
 
 "로또 번호 연구소"(이하 "앱", 패키지 `com.tlsgusdlf33.lottolab`)는 개인이 만든 앱이며 동행복권과 관계가 없습니다.
 
