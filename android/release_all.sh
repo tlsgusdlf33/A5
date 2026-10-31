@@ -4,6 +4,7 @@
 #   - LottoLab-<버전>-play.aab     Google Play 업로드용 (자체 업데이트·설치 권한 없음)
 #   - LottoOwner-<버전>.apk        개인 전용 앱 (광고 없음)
 # 일반 앱의 앱 안 업데이트 파일(android/releases/)도 최신본만 남기고 갱신한다.
+# 광고: 기본은 테스트 광고. 정식 출시용은  USE_REAL_ADS=1 ./release_all.sh "..."
 # 사용법: app/build.gradle.kts 의 versionCode·versionName 을 올린 뒤
 #        ./release_all.sh "변경 내용"   → 이후 공개 저장소 변경분 커밋·푸시
 set -euo pipefail
@@ -17,6 +18,8 @@ REPO=tlsgusdlf33/lotto-private
 ./gradlew assemblePersonalRelease bundlePlayRelease --no-daemon -q
 
 NAME=$(python3 -c "import json;print(json.load(open('releases/latest.json'))['versionName'])")
+ADS=$([ "${USE_REAL_ADS:-0}" = "1" ] && echo "실제 광고" || echo "테스트 광고")
+NOTES="$NOTES ($ADS)"
 TAG="v$NAME"
 OUT=$(mktemp -d)
 cp "releases/LottoLab-$NAME.apk"                                  "$OUT/LottoLab-$NAME.apk"

@@ -6,6 +6,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// 실제 광고 사용 여부 (기본 false = 테스트 광고)
+val useRealAds = (project.findProperty("useRealAds")?.toString() ?: System.getenv("USE_REAL_ADS") ?: "false")
+    .let { it == "true" || it == "1" }
+
 // 서명 정보는 저장소 밖 keystore.properties 에서 읽는다 (없으면 release 도 debug 키로 서명).
 val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
@@ -20,13 +24,18 @@ android {
         applicationId = "com.tlsgusdlf33.lottolab"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.6.1"
+        versionCode = 9
+        versionName = "1.6.2"
 
-        // AdMob: 현재는 Google 공식 테스트 ID. 출시 전 본인 AdMob ID 로 교체.
-        manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
-        buildConfigField("String", "BANNER_AD_UNIT", "\"ca-app-pub-3940256099942544/9214589741\"")
-        buildConfigField("String", "INTERSTITIAL_AD_UNIT", "\"ca-app-pub-3940256099942544/1033173712\"")
+        // AdMob. 기본은 테스트 광고(비공개 테스트용). 정식 출시 빌드만 실제 광고:
+        //   ./gradlew bundlePlayRelease -PuseRealAds=true   (또는 환경변수 USE_REAL_ADS=1)
+        // 앱 ID 는 항상 실제 값 — Google 권장대로 실제 앱 ID + 테스트 광고 단위로 테스트한다.
+        manifestPlaceholders["admobAppId"] = "ca-app-pub-2585881738799653~1801150253"
+        buildConfigField("String", "BANNER_AD_UNIT",
+            "\"${if (useRealAds) "ca-app-pub-2585881738799653/5591175271" else "ca-app-pub-3940256099942544/9214589741"}\"")
+        buildConfigField("String", "INTERSTITIAL_AD_UNIT",
+            "\"${if (useRealAds) "ca-app-pub-2585881738799653/6552903152" else "ca-app-pub-3940256099942544/1033173712"}\"")
+        buildConfigField("boolean", "REAL_ADS", useRealAds.toString())
         buildConfigField(
             "String", "DATA_BASE_URL",
             "\"https://raw.githubusercontent.com/tlsgusdlf33/A5/claude/korean-lottery-prediction-1qnjpk/\""
