@@ -1,6 +1,6 @@
 {
- "through_draw": 1247,
- "chi_p": 0.9627168279077005,
+ "through_draw": 1248,
+ "chi_p": 0.9576077906932751,
  "machine_chi_p": {
   "1": 0.9905859901970065,
   "2": 0.8111142441543203,
@@ -8,8 +8,8 @@
  },
  "machine_diff_p": 0.7358708719506059,
  "strategies_tested": 19,
- "max_abs_z": 1.0055198850141844,
+ "max_abs_z": 0.9485293285131731,
  "significant": [],
- "popularity_p": 0.013493253373313344,
- "popularity_gain": 1.1694564651675226
+ "popularity_p": 0.011494252873563218,
+ "popularity_gain": 1.169448837662492
 }
