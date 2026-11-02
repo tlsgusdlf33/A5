@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
@@ -100,7 +101,7 @@ class MainActivity : ComponentActivity() {
 }
 
 internal enum class Tab(val label: String) {
-    PICKS("추천"), REPORT("성적표"), RESULTS("당첨 결과"), ANALYSIS("분석"), CHECK("내 번호")
+    PICKS("로또"), PENSION("연금"), REPORT("성적표"), RESULTS("결과"), ANALYSIS("분석"), CHECK("내 번호")
 }
 
 @Composable
@@ -143,6 +144,7 @@ internal fun AppScaffold(
                                 Icon(
                                     when (t) {
                                         Tab.PICKS -> Icons.Filled.Star
+                                        Tab.PENSION -> Icons.Filled.ThumbUp
                                         Tab.REPORT -> Icons.Filled.DateRange
                                         Tab.RESULTS -> Icons.Filled.List
                                         Tab.ANALYSIS -> Icons.Filled.Info
@@ -178,6 +180,7 @@ internal fun AppScaffold(
                 }
                 else -> when (tab) {
                     Tab.PICKS -> PicksScreen(state, onRegenerate = onRegenerate, onRefresh = onRefresh)
+                    Tab.PENSION -> PensionScreen(state)
                     Tab.REPORT -> ReportScreen(state)
                     Tab.RESULTS -> ResultsScreen(state)
                     Tab.ANALYSIS -> AnalysisScreen(state)
@@ -308,6 +311,109 @@ private fun ReviewCard(g: GradedEntry) {
         Spacer(Modifier.height(8.dp))
         Text("최고 ${g.bestHits}개 일치 · 당첨금 ${won(g.won)} / 구매 ${won(g.spent)}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
         Note("5세트로 5등 이상이 하나라도 나올 확률은 매주 약 11.6%라서 대부분의 주는 낙첨입니다. 누적 결과는 '성적표' 탭에서 보세요.")
+    }
+}
+
+// ------------------------------------------------------------------ 연금복권720+
+@Composable
+private fun PensionTicketRow(t: PensionTicket, hits: Int = -1, label: String? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+        Box(Modifier.size(width = 52.dp, height = 34.dp).clip(RoundedCornerShape(8.dp)).background(Navy),
+            contentAlignment = Alignment.Center) {
+            Text("${t.group}조", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.width(6.dp))
+        t.number.forEachIndexed { i, ch ->
+            val hit = hits >= 0 && i >= 6 - hits
+            val dim = hits >= 0 && !hit
+            Box(Modifier.padding(horizontal = 2.dp).size(34.dp).clip(CircleShape)
+                .background(if (dim) Color(0xFFE2E4EA) else ballColor(1 + (ch - '0') * 4)),
+                contentAlignment = Alignment.Center) {
+                Text("$ch", color = if (dim) Color(0xFF8A8F9C) else Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
+        }
+        label?.let { Spacer(Modifier.width(6.dp)); Text(it, fontSize = 12.sp, color = Color(0xFF6B7280)) }
+    }
+}
+
+@Composable
+private fun PensionScreen(s: UiState) {
+    val draws = s.pensionDraws
+    if (draws.isEmpty()) {
+        Column(Modifier.fillMaxSize().padding(24.dp)) { Note("연금복권 데이터를 불러오는 중이거나 불러오지 못했습니다. 새로고침해 주세요.") }
+        return
+    }
+    val last = draws.last()
+    LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Section("연금복권720+ 제${last.round + 1}회 추천 5장") {
+                Note("${java.time.LocalDate.parse(last.date).plusDays(7)} (목) 추첨 · 이 기기 전용 번호 · 제1~${last.round}회 분석")
+                Spacer(Modifier.height(8.dp))
+                s.pensionTickets.forEach { PensionTicketRow(it) }
+                Spacer(Modifier.height(8.dp))
+                Text("🎯 5장 중 하나라도 당첨(7등 이상): ${pct(PensionEngine.pAny(s.pensionTickets))}",
+                    fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Note("아무렇게나 고른 5장 ${pct(PensionEngine.randomPAny(5))} · 끝자리를 모두 다르게 골라 같은 5,000원으로 당첨 범위를 최대로")
+            }
+        }
+        s.pensionVerification?.let { v ->
+            item {
+                Section("이번 주 검증 결과") {
+                    Text("① 추첨 편향 검정", fontWeight = FontWeight.SemiBold)
+                    Note("제1~${v.rounds}회 · 조 분포 p=${"%.2f".format(v.groupP)} · 자리별 숫자 ${v.tests - 1}개 검정 최소 p=${"%.3f".format(v.minDigitP)}\n→ " +
+                        if (v.significant.isEmpty()) "무작위와 구분되지 않음" else "유의: ${v.significant.joinToString()}")
+                    Spacer(Modifier.height(6.dp))
+                    Text("② 끝자리 예측 전략 백테스트", fontWeight = FontWeight.SemiBold)
+                    Note("선택 구간 1위 '${v.backtestBest}' → 검증 구간 z=${"%+.2f".format(v.backtestBestZ)}\n→ 채택: ${v.adopted}")
+                    Spacer(Modifier.height(6.dp))
+                    Text("③ 당첨금", fontWeight = FontWeight.SemiBold)
+                    Note("당첨금이 고정이고 번호마다 한 장씩만 팔려 나눠 갖지 않으므로, 로또의 인기도 전략은 적용하지 않습니다.")
+                }
+            }
+        }
+        s.pensionGraded.firstOrNull { it.draw?.round == last.round }?.let { g ->
+            item {
+                Section("지난주 결과 검토 (제${last.round}회)") {
+                    Text("당첨번호 ${last.group}조 ${last.number} · 보너스 ${last.bonus}", fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
+                    g.entry.tickets.forEach { t ->
+                        val (main, bonus) = PensionEngine.grade(t, last)
+                        PensionTicketRow(t, PensionEngine.tailMatch(t.number, last.number), PensionEngine.rankName(main, bonus))
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text("당첨금 ${won(g.won)} / 구매 ${won(g.spent)}", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        s.pensionGraded.filter { it.draw != null }.takeIf { it.isNotEmpty() }?.let { done ->
+            item {
+                Section("연금복권 누적 성적표") {
+                    val spent = done.sumOf { it.spent }
+                    val wonSum = done.sumOf { it.won }
+                    Text("${done.size}회차 · ${done.sumOf { it.entry.tickets.size }}장 · 구매 ${won(spent)} · 당첨 ${won(wonSum)}",
+                        fontWeight = FontWeight.SemiBold)
+                    Note("1장 1,000원, 추천 5장을 모두 샀다고 가정. 연금복권의 평균 환수율은 약 50%입니다.")
+                }
+            }
+        }
+        item {
+            Section("최근 당첨번호") {
+                draws.takeLast(8).reversed().forEach { d ->
+                    Text("제${d.round}회 · ${d.date}", fontSize = 12.sp, color = Color(0xFF6B7280))
+                    PensionTicketRow(PensionTicket(d.group, d.number))
+                    Note("보너스 ${d.bonus}")
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
+        }
+        item {
+            Text(
+                "⚠️ 연금복권 1장의 1등 확률은 1/5,000,000으로 모든 번호가 같습니다. 이 앱은 당첨 확률을 높이거나 당첨을 보장하지 않으며 " +
+                    "동행복권과 무관한 개인 제작 앱입니다. 복권은 만 19세 이상만 구매할 수 있습니다. 도박 문제 상담: 1336",
+                fontSize = 11.sp, color = Color(0xFF9CA3AF), lineHeight = 15.sp,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+            )
+        }
     }
 }
 

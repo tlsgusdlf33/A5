@@ -152,4 +152,30 @@ class LottoEngineTest {
         assertTrue(own.all { o -> pub.all { p -> o.count { it in p } < 4 } })
         assertEquals(0.11867929763562209, LottoEngine.pAnyMatch(own, 3), 1e-12)
     }
+
+    /** pension.py 와 같은 결과. */
+    @Test
+    fun pensionMatchesPython() {
+        for (n in listOf("483378", "461092", "537215")) assertTrue(PensionEngine.isReserved(n))
+        for (n in listOf("398259", "791907", "876232")) assertFalse(PensionEngine.isReserved(n))
+        val d = PensionDraw(339, "2026-10-29", 3, "136515", "617511")
+        assertEquals(1 to false, PensionEngine.grade(PensionTicket(3, "136515"), d))
+        assertEquals(2 to false, PensionEngine.grade(PensionTicket(1, "136515"), d))
+        assertEquals(3 to false, PensionEngine.grade(PensionTicket(2, "036515"), d))
+        assertEquals(6 to false, PensionEngine.grade(PensionTicket(5, "000015"), d))
+        assertEquals(0 to true, PensionEngine.grade(PensionTicket(4, "617511"), d))
+        assertEquals(1_680_000_000L, PensionEngine.prize(PensionTicket(3, "136515"), d))
+        assertEquals(120_000_000L, PensionEngine.prize(PensionTicket(4, "617511"), d))
+    }
+
+    @Test
+    fun pensionPicksCoverAndAvoidReserved() {
+        for (seed in 1L..50L) {
+            val t = PensionEngine.pick(seed)
+            assertEquals(5, t.size)
+            assertEquals(setOf(1, 2, 3, 4, 5), t.map { it.group }.toSet())
+            assertEquals(0.5, PensionEngine.pAny(t), 1e-12)
+            assertTrue(t.none { PensionEngine.isReserved(it.number) })
+        }
+    }
 }

@@ -1,7 +1,7 @@
 {
-  "versionCode": 9,
-  "versionName": "1.6.2",
-  "apkUrl": "android/releases/LottoLab-1.6.2.apk",
-  "sha256": "8eda50b1480978a34ea62a36deff6b9951420f4bd2cd87ea7d15f53f2a47a527",
-  "notes": "광고 설정: 실제 앱 ID + 테스트 광고 단위 (정식 출시 시 실제 광고로 전환)"
+  "versionCode": 10,
+  "versionName": "1.7.0",
+  "apkUrl": "android/releases/LottoLab-1.7.0.apk",
+  "sha256": "19ccb43c458f477502bd2375654b519919522d253c457f9b68c12096f7a6a4d4",
+  "notes": "연금복권720+ 탭 추가, 개인 전용 영역 회피"
 }

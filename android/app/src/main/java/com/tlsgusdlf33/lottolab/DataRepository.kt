@@ -96,6 +96,27 @@ class DataRepository(private val context: Context) {
         Loaded(parseModel(asset("popularity_model.json")), Source.BUNDLED)
     }
 
+    /** 연금복권720+ 전체 회차 (공개 저장소가 매주 갱신 → 캐시 → 앱 기본 데이터). */
+    suspend fun pension(): List<PensionDraw> = withContext(Dispatchers.IO) {
+        val cache = File(context.filesDir, "pension720.json")
+        fetch(base + "data/pension720.json")?.let { text ->
+            runCatching { PensionEngine.parseDraws(text) }.getOrNull()?.takeIf { it.size > 300 }?.let {
+                cache.writeText(text)
+                return@withContext it
+            }
+        }
+        cache.takeIf { it.exists() }?.let { f -> runCatching { PensionEngine.parseDraws(f.readText()) }.getOrNull() }
+            ?.let { return@withContext it }
+        PensionEngine.parseDraws(asset("pension720.json"))
+    }
+
+    suspend fun pensionVerification(round: Int): PensionVerification? = withContext(Dispatchers.IO) {
+        val cache = File(context.filesDir, "pension_weekly_$round.json")
+        val text = fetch(base + "predictions/pension/$round.json")?.also { cache.writeText(it) }
+            ?: cache.takeIf { it.exists() }?.readText() ?: return@withContext null
+        PensionEngine.parseVerification(text)
+    }
+
     /** 가장 최근 추첨 회차 번호 (작은 파일만 받아 알림 확인용으로 사용). */
     suspend fun latestDrawNo(): Int? = withContext(Dispatchers.IO) {
         fetch("https://smok95.github.io/lotto/results/latest.json")?.let {

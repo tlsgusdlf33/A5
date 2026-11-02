@@ -86,6 +86,11 @@ class StoreScreenshots {
             loading = false, draws = d, model = m, stats = LottoEngine.stats(d), source = Source.NETWORK,
             targetDraw = target, targetDate = LocalDate.parse(d.last().date).plusDays(7).toString(),
             picks = picks, report = PersonalStore.report(hist, d), weekly = weekly,
+            pensionDraws = PensionEngine.parseDraws(File(assets, "pension720.json").readText()),
+            pensionTickets = PensionEngine.pick(20261102L),
+            pensionVerification = File(repoRoot, "predictions/pension").listFiles()
+                ?.maxByOrNull { it.nameWithoutExtension.toIntOrNull() ?: 0 }
+                ?.let { PensionEngine.parseVerification(it.readText()) },
         )
     }
 
@@ -106,6 +111,7 @@ class StoreScreenshots {
 
     @Test fun picks() = shot(Tab.PICKS, "01-picks")
     @Test fun report() = shot(Tab.REPORT, "02-report")
+    @Test fun pension() = shot(Tab.PENSION, "06-pension")
     @Test fun results() = shot(Tab.RESULTS, "03-results")
     @Test fun analysis() = shot(Tab.ANALYSIS, "04-analysis")
     @Test fun check() = shot(Tab.CHECK, "05-check")

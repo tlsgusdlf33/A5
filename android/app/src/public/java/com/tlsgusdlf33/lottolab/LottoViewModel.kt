@@ -26,6 +26,11 @@ data class UiState(
     /** '새로 뽑기'로 만든 추가 조합. */
     val extraPicks: List<Pick> = emptyList(),
     val weekly: WeeklyPrediction? = null,
+    /** 연금복권720+ */
+    val pensionDraws: List<PensionDraw> = emptyList(),
+    val pensionTickets: List<PensionTicket> = emptyList(),
+    val pensionVerification: PensionVerification? = null,
+    val pensionGraded: List<PensionGraded> = emptyList(),
     val generating: Boolean = false,
     val regenCount: Int = 0,
 )
@@ -33,6 +38,7 @@ data class UiState(
 class LottoViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = DataRepository(app)
     private val store = PersonalStore(app)
+    private val pensionStore = PensionStore(app)
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
 
@@ -66,6 +72,18 @@ class LottoViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }.onFailure {
                 _state.value = _state.value.copy(loading = false, error = it.message ?: "데이터를 불러오지 못했습니다")
+            }
+            // 연금복권: 실패해도 로또 화면에는 영향 없음
+            runCatching {
+                val pd = repo.pension()
+                val round = pd.last().round + 1
+                val tickets = pensionStore.ticketsFor(round)
+                val byRound = pd.associateBy { it.round }
+                val graded = pensionStore.history().sortedByDescending { it.round }.map { PensionGraded(it, byRound[it.round]) }
+                _state.value = _state.value.copy(
+                    pensionDraws = pd, pensionTickets = tickets,
+                    pensionVerification = repo.pensionVerification(round), pensionGraded = graded,
+                )
             }
         }
     }

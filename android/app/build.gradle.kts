@@ -24,8 +24,8 @@ android {
         applicationId = "com.tlsgusdlf33.lottolab"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.6.2"
+        versionCode = 10
+        versionName = "1.7.0"
 
         // AdMob. 기본은 테스트 광고(비공개 테스트용). 정식 출시 빌드만 실제 광고:
         //   ./gradlew bundlePlayRelease -PuseRealAds=true   (또는 환경변수 USE_REAL_ADS=1)
